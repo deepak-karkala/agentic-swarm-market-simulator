@@ -1,0 +1,7 @@
+.scaffold {
+  padding: 40px;
+}
+
+.scaffold p {
+  color: var(--dim);
+}

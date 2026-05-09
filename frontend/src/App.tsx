@@ -1,10 +1,11 @@
 import "./styles/globals.css";
+import styles from "./App.module.css";
 
 function App() {
   return (
-    <div style={{ padding: 40 }}>
+    <div className={styles.scaffold}>
       <h1>Agentic Market Simulator</h1>
-      <p style={{ color: "var(--dim)" }}>Phase 1 scaffold — ready.</p>
+      <p>Phase 1 scaffold — ready.</p>
     </div>
   );
 }

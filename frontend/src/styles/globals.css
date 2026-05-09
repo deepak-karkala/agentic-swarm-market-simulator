@@ -39,11 +39,6 @@
   --grid:    rgba(0, 0, 0, .04);
 }
 
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-}
-
 body {
   font-size: 13px;
   line-height: 1.45;
