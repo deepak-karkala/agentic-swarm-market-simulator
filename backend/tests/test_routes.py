@@ -64,7 +64,7 @@ class TestGetSimStatus:
         assert response.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_sse_endpoint_exists_for_valid_sim(self, client):
+    async def test_sse_endpoint_resolves_for_valid_sim(self, client):
         resp = await client.post(
             "/simulate",
             json={
@@ -77,10 +77,13 @@ class TestGetSimStatus:
         )
         sim_id = resp.json()["sim_id"]
 
-        # Verify the SSE endpoint exists (200/404 check; streaming body
-        # verification is deferred to integration tests — Task 6.1)
-        assert task_manager.has_sim(sim_id)
-        assert not task_manager.has_sim("nonexistent")
+        # Emit completion so the SSE generator breaks after one event
+        # and the HTTP response body completes.
+        task_manager.emit_event(sim_id, "simulation_complete", {"sim_id": sim_id})
+
+        async with client.stream("GET", f"/simulate/{sim_id}/status") as response:
+            assert response.status_code == 200
+            assert "text/event-stream" in response.headers["content-type"]
 
 
 class TestGetSimReport:

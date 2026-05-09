@@ -17,16 +17,18 @@ router = APIRouter()
 @router.post("/simulate", response_model=SimulateResponse)
 async def simulate(request: SimulateRequest):
     if not task_manager.acquire():
+        current = task_manager.current_sim_id or "unknown"
         raise HTTPException(
             status_code=409,
-            detail={"error": "simulation_in_progress", "sim_id": "current"},
+            detail={"error": "simulation_in_progress", "sim_id": current},
         )
 
     sim_id = task_manager.init_sim()
     task_manager.emit_event(sim_id, "stage_start", {"stage": "stage0", "message": "Gathering market intelligence..."})
 
-    # Background pipeline will be wired in Task 6.1.
-    # The lock is released when the pipeline completes or errors.
+    # TODO (Task 6.1): The pipeline thread must call task_manager.release()
+    # in BOTH the success and error paths of the background task. If
+    # release() is missed, the 409 guard becomes permanent after one sim.
 
     return SimulateResponse(sim_id=sim_id, status="queued")
 
@@ -45,6 +47,8 @@ async def simulate_status(sim_id: str, request: Request):
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=15.0)
                 yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
+                if event["event"] == "simulation_complete":
+                    break
             except asyncio.TimeoutError:
                 yield ": heartbeat\n\n"
 
