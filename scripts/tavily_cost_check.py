@@ -12,6 +12,8 @@ import sys
 import time
 from pathlib import Path
 
+from scripts._utils import load_dotenv
+
 SCENARIO = "Apple launches an electric vehicle at $35,000"
 GEOGRAPHY = "United States"
 VERTICAL = "auto"
@@ -26,21 +28,6 @@ PIPELINE_QUERIES = [
 ]
 
 CREDIT_COST = 0.008  # USD per credit
-
-
-def _load_dotenv():
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.exists():
-        return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key, value = key.strip(), value.strip().strip("\"'")
-            if key and key not in os.environ:
-                os.environ[key] = value
 
 
 def theoretical_estimate():
@@ -64,7 +51,7 @@ def theoretical_estimate():
     print()
     print("NOTE: Verification requires TAVILY_API_KEY in .env.")
     print("      Free tier: 1,000 credits/month at https://tavily.com")
-    return basic_cost, advanced_cost
+    return basic_cost
 
 
 def run_live_test():
@@ -84,6 +71,10 @@ def run_live_test():
     for name, query in PIPELINE_QUERIES:
         t0 = time.monotonic()
         try:
+            # NOTE: topic="news" + time_range="month" is appropriate for news-driven pipelines
+            # (competitors, KOLs, macro). The regulatory pipeline may miss older policy docs.
+            # Stage 0 implementation: regulatory pipeline should use topic="general" and no
+            # time_range to surface multi-year regulatory documents. Cost is unaffected (1 credit).
             resp = client.search(
                 query=query,
                 search_depth="basic",
@@ -118,11 +109,11 @@ def run_live_test():
         print("DECISION: $0.31-$0.75/sim -> REDUCE TO 4 PIPELINES (drop geo + macro)")
     else:
         print("DECISION: > $0.75/sim -> REDESIGN STAGE 0")
-    return cost, cost
+    return cost
 
 
 def main():
-    _load_dotenv()
+    load_dotenv()
 
     print("=" * 50)
     print("TAVILY API COST VALIDATION — Task 0.2")

@@ -16,6 +16,8 @@ import os
 import sys
 from pathlib import Path
 
+from scripts._utils import load_dotenv
+
 STAGE0_ENTITY_TYPES = {
     "CompetitorProfile": {
         "market_share": "text",
@@ -56,21 +58,6 @@ STAGE0_EDGE_TYPES = {
 
 MAX_ENTITY_TYPES = 10
 MAX_EDGE_TYPES = 10
-
-
-def _load_dotenv():
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.exists():
-        return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key, value = key.strip(), value.strip().strip("\"'")
-            if key and key not in os.environ:
-                os.environ[key] = value
 
 
 def theoretical_analysis():
@@ -167,6 +154,7 @@ def run_live_test():
         """Geographic market conditions for consumer behavior."""
         price_sensitivity: EntityText = Field(description="high, medium, or low price sensitivity", default=None)
         adoption_curve: EntityText = Field(description="early, growth, or mature adoption curve", default=None)
+        infrastructure_constraints: EntityText = Field(description="Infrastructure limitations affecting the market", default=None)
 
     class RegPolicy(EntityModel):
         """A regulatory policy affecting the target market."""
@@ -224,7 +212,7 @@ def run_live_test():
 
 
 def main():
-    _load_dotenv()
+    load_dotenv()
 
     print("=" * 55)
     print("ZEP CLOUD CUSTOM NODE TYPE VALIDATION — Task 0.3")

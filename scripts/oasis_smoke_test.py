@@ -12,10 +12,14 @@ import asyncio
 import csv
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
 from pathlib import Path
+
+from scripts._utils import load_dotenv
+
 
 # --- Configuration ---
 NUM_AGENTS = 10
@@ -56,22 +60,6 @@ AGENT_PROFILES = [
      "user_char": "Social media influencer with 500K followers. Posts about lifestyle, tech trends, and product reviews. Trend-aware.",
      "description": "Influencer | 500K followers | Lifestyle & tech"},
 ]
-
-
-def _load_dotenv():
-    """Load .env file from project root, if present."""
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.exists():
-        return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key, value = key.strip(), value.strip().strip("\"'")
-            if key and key not in os.environ:
-                os.environ[key] = value
 
 
 class SmokeTestResult:
@@ -192,7 +180,7 @@ async def run_smoke_test() -> SmokeTestResult:
     result.add_check("imports", True, f"oasis={oasis.__version__}")
 
     # --- Step 2: Load API key from .env ---
-    _load_dotenv()
+    load_dotenv()
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
         api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -220,11 +208,13 @@ async def run_smoke_test() -> SmokeTestResult:
                 writer.writerow(profile)
     except OSError as e:
         result.add_check("csv_create", False, str(e))
+        shutil.rmtree(tmpdir, ignore_errors=True)
         return result
 
     valid, msg = validate_csv_format(csv_path)
     result.add_check("csv_format", valid, msg)
     if not valid:
+        shutil.rmtree(tmpdir, ignore_errors=True)
         return result
 
     # --- Step 4: Create model ---
@@ -249,8 +239,6 @@ async def run_smoke_test() -> SmokeTestResult:
     except Exception as e:
         result.add_check("model_create", False, str(e))
         return result
-
-    # --- Step 5: Build agent graph ---
     try:
         available_actions = ActionType.get_default_twitter_actions()
         agent_graph = await generate_twitter_agent_graph(
@@ -262,9 +250,11 @@ async def run_smoke_test() -> SmokeTestResult:
         result.add_check("agent_graph", agent_count == NUM_AGENTS,
                          f"{agent_count} agents created (expected {NUM_AGENTS})")
         if agent_count != NUM_AGENTS:
+            shutil.rmtree(tmpdir, ignore_errors=True)
             return result
     except Exception as e:
         result.add_check("agent_graph", False, str(e))
+        shutil.rmtree(tmpdir, ignore_errors=True)
         return result
 
     # --- Step 6: Create environment ---
@@ -281,6 +271,7 @@ async def run_smoke_test() -> SmokeTestResult:
         result.add_check("env_init", True, "Twitter environment initialized")
     except Exception as e:
         result.add_check("env_init", False, str(e))
+        shutil.rmtree(tmpdir, ignore_errors=True)
         return result
 
     # --- Step 7: Run simulation rounds ---
@@ -301,6 +292,7 @@ async def run_smoke_test() -> SmokeTestResult:
         await env.step(actions)
 
         # Rounds 2-N: all agents use LLM actions
+        # API note: get_agents() returns list of (agent_id, agent) tuples (OASIS 0.2.5)
         for r in range(2, NUM_ROUNDS + 1):
             actions = {
                 agent: LLMAction()
@@ -319,6 +311,7 @@ async def run_smoke_test() -> SmokeTestResult:
             await env.close()
         except Exception:
             pass
+        shutil.rmtree(tmpdir, ignore_errors=True)
         return result
 
     # --- Step 8: Validate database ---
@@ -347,6 +340,7 @@ async def run_smoke_test() -> SmokeTestResult:
     result.csv_path = csv_path
     result.db_path = db_path
 
+    shutil.rmtree(tmpdir, ignore_errors=True)
     return result
 
 
@@ -367,7 +361,6 @@ def main():
     print()
     if result.passed:
         print(f"PASS: OASIS {NUM_AGENTS}-agent x {NUM_ROUNDS}-round smoke test completed.")
-        print(f"\nArtifacts at: {result.csv_path}")
         sys.exit(0)
     else:
         print(f"FAIL: {len(result.errors)} check(s) failed:")
