@@ -12,7 +12,8 @@ import sys
 import time
 from pathlib import Path
 
-from scripts._utils import load_dotenv
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _utils import load_dotenv
 
 SCENARIO = "Apple launches an electric vehicle at $35,000"
 GEOGRAPHY = "United States"

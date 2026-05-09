@@ -16,7 +16,8 @@ import os
 import sys
 from pathlib import Path
 
-from scripts._utils import load_dotenv
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _utils import load_dotenv
 
 STAGE0_ENTITY_TYPES = {
     "CompetitorProfile": {
