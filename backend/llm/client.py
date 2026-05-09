@@ -67,10 +67,12 @@ class LLMClient:
 
     # -- main API --
 
-    async def complete(self, prompt: str, tier: ModelTier) -> str:
+    async def complete(self, prompt: str, tier: ModelTier, max_tokens: int = 1024) -> str:
         """Send a prompt to the tier-appropriate model.
 
         Returns the response text. Handles rate-limit retries and cost caps.
+        Callers that expect long responses (Stage 4, Stage 3.5) should
+        pass an appropriate max_tokens value.
         """
         model_id = MODEL_IDS[tier]
 
@@ -78,7 +80,7 @@ class LLMClient:
             try:
                 response = await self._client.messages.create(
                     model=model_id,
-                    max_tokens=1024,
+                    max_tokens=max_tokens,
                     messages=[{"role": "user", "content": prompt}],
                 )
                 self._track_cost(response, tier)

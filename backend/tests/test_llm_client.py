@@ -2,16 +2,57 @@
 
 import pytest
 
-from backend.llm.client import LLMClient, ModelTier
+from backend.llm.client import (
+    LLMClient,
+    LLMCostCapExceeded,
+    LLMRateLimitError,
+    MODEL_IDS,
+    ModelTier,
+)
 from backend.llm.mock_client import MockLLMClient, MockFixtureMissing
 
 
-class TestModelTier:
-    def test_haiku_routes_to_correct_model(self):
-        assert ModelTier.HAIKU.value == "haiku"
+def _make_response(text="ok", input_tokens=100, output_tokens=50):
+    """Build a fake Anthropic response object for test monkeypatching."""
+    return type(
+        "FakeResponse",
+        (),
+        {
+            "content": [type("FakeBlock", (), {"text": text})()],
+            "usage": type("FakeUsage", (), {"input_tokens": input_tokens, "output_tokens": output_tokens})(),
+        },
+    )()
 
-    def test_sonnet_routes_to_correct_model(self):
-        assert ModelTier.SONNET.value == "sonnet"
+
+class TestModelTier:
+    def test_haiku_routes_to_correct_model_id(self):
+        assert MODEL_IDS[ModelTier.HAIKU] == "claude-haiku-4-5-20251001"
+
+    def test_sonnet_routes_to_correct_model_id(self):
+        assert MODEL_IDS[ModelTier.SONNET] == "claude-sonnet-4-6"
+
+    @pytest.mark.asyncio
+    async def test_complete_passes_model_to_api(self, monkeypatch):
+        received_model = None
+
+        async def mock_create(*args, **kwargs):
+            nonlocal received_model
+            received_model = kwargs.get("model")
+            return _make_response()
+
+        monkeypatch.setattr(
+            "anthropic.resources.messages.AsyncMessages.create",
+            mock_create,
+        )
+
+        client = LLMClient(api_key="fake-key")
+        client._cost_cap = 999.0
+
+        await client.complete("test", tier=ModelTier.HAIKU)
+        assert received_model == "claude-haiku-4-5-20251001"
+
+        await client.complete("test", tier=ModelTier.SONNET)
+        assert received_model == "claude-sonnet-4-6"
 
 
 class TestMockLLMClient:
@@ -62,7 +103,7 @@ class TestMockLLMClient:
 
 class TestLLMClientRateLimit:
     @pytest.mark.asyncio
-    async def test_retries_on_429_with_backoff(self, monkeypatch):
+    async def test_retries_on_429_then_succeeds(self, monkeypatch):
         call_count = 0
 
         async def mock_create(*args, **kwargs):
@@ -72,14 +113,7 @@ class TestLLMClientRateLimit:
                 exc = Exception("rate limited")
                 exc.status_code = 429
                 raise exc
-            return type(
-                "FakeResponse",
-                (),
-                {
-                    "content": [type("FakeBlock", (), {"text": "success"})()],
-                    "usage": type("FakeUsage", (), {"input_tokens": 100, "output_tokens": 50})(),
-                },
-            )()
+            return _make_response(text="success")
 
         monkeypatch.setattr(
             "anthropic.resources.messages.AsyncMessages.create",
@@ -93,19 +127,29 @@ class TestLLMClientRateLimit:
         assert result == "success"
         assert call_count == 3
 
+    @pytest.mark.asyncio
+    async def test_all_three_attempts_fail_raises_rate_limit_error(self, monkeypatch):
+        async def mock_create(*args, **kwargs):
+            exc = Exception("rate limited")
+            exc.status_code = 429
+            raise exc
+
+        monkeypatch.setattr(
+            "anthropic.resources.messages.AsyncMessages.create",
+            mock_create,
+        )
+
+        client = LLMClient(api_key="fake-key")
+
+        with pytest.raises(LLMRateLimitError):
+            await client.complete("test", tier=ModelTier.HAIKU)
+
 
 class TestLLMClientCostTracking:
     @pytest.mark.asyncio
     async def test_cost_accumulates_from_response(self, monkeypatch):
         async def mock_create(*args, **kwargs):
-            return type(
-                "FakeResponse",
-                (),
-                {
-                    "content": [type("FakeBlock", (), {"text": "ok"})()],
-                    "usage": type("FakeUsage", (), {"input_tokens": 1000, "output_tokens": 100})(),
-                },
-            )()
+            return _make_response(input_tokens=1000, output_tokens=100)
 
         monkeypatch.setattr(
             "anthropic.resources.messages.AsyncMessages.create",
@@ -124,14 +168,7 @@ class TestLLMClientCostTracking:
     @pytest.mark.asyncio
     async def test_cost_cap_raises_error(self, monkeypatch):
         async def mock_create(*args, **kwargs):
-            return type(
-                "FakeResponse",
-                (),
-                {
-                    "content": [type("FakeBlock", (), {"text": "ok"})()],
-                    "usage": type("FakeUsage", (), {"input_tokens": 1000000, "output_tokens": 500000})(),
-                },
-            )()
+            return _make_response(input_tokens=1_000_000, output_tokens=500_000)
 
         monkeypatch.setattr(
             "anthropic.resources.messages.AsyncMessages.create",
@@ -140,8 +177,6 @@ class TestLLMClientCostTracking:
 
         client = LLMClient(api_key="fake-key")
         client._cost_cap = 1.0
-
-        from backend.llm.client import LLMCostCapExceeded
 
         with pytest.raises(LLMCostCapExceeded):
             await client.complete("test", tier=ModelTier.SONNET)

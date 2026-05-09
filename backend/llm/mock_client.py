@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.llm.client import ModelTier
+from backend.llm.client import LLMCostCapExceeded, ModelTier
 
 
 class MockFixtureMissing(Exception):
@@ -20,11 +20,12 @@ class MockLLMClient:
         self,
         responses: dict[str, str] | None = None,
         cost_per_call: float = 0.0,
+        cost_cap: float = 10.0,
     ):
         self._responses: dict[str, str] = dict(responses or {})
         self._cost_per_call = cost_per_call
+        self._cost_cap = cost_cap
         self._total_cost = 0.0
-        self._cost_cap = 10.0
 
     @property
     def total_cost_usd(self) -> float:
@@ -47,8 +48,6 @@ class MockLLMClient:
 
         self._total_cost += self._cost_per_call
         if self._total_cost > self._cost_cap:
-            from backend.llm.client import LLMCostCapExceeded
-
             raise LLMCostCapExceeded(
                 f"Cost cap exceeded: ${self._total_cost:.4f} > ${self._cost_cap:.2f}"
             )
