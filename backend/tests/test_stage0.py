@@ -1,34 +1,35 @@
 """Tests for Stage 0: Reality Seeding."""
 
+import json
+import time
+
 import pytest
 
 from backend.llm.mock_client import MockLLMClient
-from backend.stage0.seeder import PIPELINES, RealitySeed, run_seeder
+from backend.stage0.seeder import PIPELINES, run_seeder
 
 
-_FAKE_RESULT = '{"name": "TestCo", "summary": "test data"}'
 _MOCK_TAVILY_RESPONSE = {
     "results": [
-        {
-            "title": "Apple EV Launch",
-            "url": "https://example.com/apple-ev",
-            "content": "Apple plans to launch an electric vehicle at $35,000...",
-        },
-        {
-            "title": "EV Market Analysis",
-            "url": "https://example.com/ev-market",
-            "content": "The EV market is growing rapidly...",
-        },
+        {"title": "A", "url": "https://x.com/a", "content": "..."},
+        {"title": "B", "url": "https://x.com/b", "content": "..."},
     ]
 }
-
+_MOCK_SINGLE_RESULT = {
+    "results": [{"title": "A", "url": "https://x.com/a", "content": "..."}]
+}
 _EMPTY_TAVILY_RESPONSE = {"results": []}
 
 
 @pytest.fixture(autouse=True)
 def _set_fake_tavily_key(monkeypatch):
-    """Set a fake TAVILY_API_KEY so TavilyClient() constructor doesn't fail."""
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-fake-key")
+
+
+def _mock_tavily(search_fn):
+    """Patch TavilyClient.search to route queries through a mock function."""
+    import backend.stage0.seeder as mod
+    mod.TavilyClient.search = search_fn
 
 
 class TestRunSeederHappyPath:
@@ -38,44 +39,50 @@ class TestRunSeederHappyPath:
             "backend.stage0.seeder.TavilyClient.search",
             lambda s, **kw: _MOCK_TAVILY_RESPONSE,
         )
-
-        llm = MockLLMClient(default_response=_FAKE_RESULT)
-
-        seed = await run_seeder(
-            scenario="Apple EV at $35K",
-            geography="US",
-            vertical="auto",
-            llm=llm,
+        # Return list for list-type pipelines, dict for dict-type.
+        # MockLLMClient prefix matching: first match wins.
+        # "Parse these search" prefix matches all 6 pipelines → returns list.
+        # geo_context and macro expect dicts → type validation rejects list → marked low.
+        llm = MockLLMClient(
+            responses={
+                "Parse these search": json.dumps([{"name": "X"}]),
+            },
+            default_response=json.dumps({"key": "value"}),
         )
 
-        assert isinstance(seed, RealitySeed)
-        assert len(seed.gaps) == 0
+        seed = await run_seeder(scenario="test", geography="US", vertical="auto", llm=llm)
+
+        # 4 list-type pipelines succeed, 2 dict-type have gaps due to type mismatch
+        assert isinstance(seed.competitors, list)
+        assert seed.confidence["competitors"] == "high"
+        assert seed.confidence["geographic"] == "low"
+        assert "geographic" in seed.gaps
 
     @pytest.mark.asyncio
-    async def test_output_fields_mapped_correctly(self, monkeypatch):
+    async def test_single_result_confidence_is_medium(self, monkeypatch):
+        monkeypatch.setattr(
+            "backend.stage0.seeder.TavilyClient.search",
+            lambda s, **kw: _MOCK_SINGLE_RESULT,
+        )
+        llm = MockLLMClient(default_response=json.dumps([{"name": "X"}]))
+
+        seed = await run_seeder(scenario="test", geography="US", vertical="auto", llm=llm)
+
+        assert seed.confidence["competitors"] == "medium"
+
+    @pytest.mark.asyncio
+    async def test_bad_llm_json_marked_unavailable(self, monkeypatch):
         monkeypatch.setattr(
             "backend.stage0.seeder.TavilyClient.search",
             lambda s, **kw: _MOCK_TAVILY_RESPONSE,
         )
+        llm = MockLLMClient(default_response="not valid json!!!")
 
-        llm = MockLLMClient(default_response=_FAKE_RESULT)
+        seed = await run_seeder(scenario="test", geography="US", vertical="auto", llm=llm)
 
-        seed = await run_seeder(
-            scenario="Apple EV at $35K",
-            geography="India",
-            vertical="pharma",
-            llm=llm,
-        )
-
-        assert seed.geography == "India"
-        assert seed.vertical == "pharma"
-        assert seed.competitors != "unavailable"
-        assert seed.historical_precedents != "unavailable"
-        assert seed.geo_context != "unavailable"
-        assert seed.regulatory != "unavailable"
-        assert seed.kols != "unavailable"
-        assert seed.macro != "unavailable"
-        assert isinstance(seed.gaps, list)
+        assert seed.competitors == []
+        assert "competitors" in seed.gaps
+        assert seed.confidence["competitors"] == "low"
 
 
 class TestRunSeederPartialFailure:
@@ -90,21 +97,15 @@ class TestRunSeederPartialFailure:
                 raise Exception("Tavily API error")
             return _MOCK_TAVILY_RESPONSE
 
-        monkeypatch.setattr(
-            "backend.stage0.seeder.TavilyClient.search",
-            flaky_tavily,
-        )
+        monkeypatch.setattr("backend.stage0.seeder.TavilyClient.search", flaky_tavily)
+        llm = MockLLMClient(default_response=json.dumps([{"name": "X"}]))
 
-        llm = MockLLMClient(default_response=_FAKE_RESULT)
+        seed = await run_seeder(scenario="test", geography="US", vertical="auto", llm=llm)
 
-        seed = await run_seeder(
-            scenario="Apple EV at $35K",
-            geography="US",
-            vertical="auto",
-            llm=llm,
-        )
-
-        assert len(seed.gaps) == 2
+        # 2 pipelines fail from Tavily error; the other 4 succeed as lists
+        assert seed.confidence["competitors"] == "high"
+        assert seed.confidence["historical"] == "low"  # failed
+        assert len(seed.gaps) >= 2  # at least the 2 Tavily failures
 
 
 class TestRunSeederAllPipelinesFail:
@@ -114,19 +115,13 @@ class TestRunSeederAllPipelinesFail:
             "backend.stage0.seeder.TavilyClient.search",
             lambda s, **kw: (_ for _ in ()).throw(Exception("all failed")),
         )
+        llm = MockLLMClient(default_response=json.dumps([{"name": "X"}]))
 
-        llm = MockLLMClient(default_response=_FAKE_RESULT)
+        seed = await run_seeder(scenario="test", geography="US", vertical="auto", llm=llm)
 
-        seed = await run_seeder(
-            scenario="Apple EV at $35K",
-            geography="US",
-            vertical="auto",
-            llm=llm,
-        )
-
-        assert len(seed.gaps) >= len(PIPELINES)
         assert seed.is_empty is True
-        assert seed.competitors == "unavailable"
+        for name, _ in PIPELINES:
+            assert seed.confidence[name] == "low"
 
 
 class TestRunSeederEmptyResults:
@@ -136,23 +131,18 @@ class TestRunSeederEmptyResults:
             "backend.stage0.seeder.TavilyClient.search",
             lambda s, **kw: _EMPTY_TAVILY_RESPONSE,
         )
+        llm = MockLLMClient(default_response=json.dumps([{"name": "X"}]))
 
-        llm = MockLLMClient(default_response=_FAKE_RESULT)
+        seed = await run_seeder(scenario="test", geography="US", vertical="auto", llm=llm)
 
-        seed = await run_seeder(
-            scenario="Apple EV at $35K",
-            geography="US",
-            vertical="auto",
-            llm=llm,
-        )
-
-        assert seed.competitors == "unavailable"
+        assert seed.competitors == []
         assert "competitors" in seed.gaps
+        assert seed.confidence["competitors"] == "low"
 
 
 class TestStage0SSEEvents:
     @pytest.mark.asyncio
-    async def test_stage_start_and_complete_events_emitted(self, monkeypatch):
+    async def test_stage_events_include_confidence(self, monkeypatch):
         monkeypatch.setattr(
             "backend.stage0.seeder.TavilyClient.search",
             lambda s, **kw: _MOCK_TAVILY_RESPONSE,
@@ -163,50 +153,33 @@ class TestStage0SSEEvents:
         task_manager.reset()
         sim_id = task_manager.init_sim()
 
-        llm = MockLLMClient(default_response=_FAKE_RESULT)
+        llm = MockLLMClient(default_response=json.dumps([{"name": "X"}]))
 
-        await run_seeder(
-            scenario="Apple EV at $35K",
-            geography="US",
-            vertical="auto",
-            llm=llm,
-            sim_id=sim_id,
-        )
+        await run_seeder(scenario="test", geography="US", vertical="auto", llm=llm, sim_id=sim_id)
 
         queue = task_manager.get_queue(sim_id)
         events = []
         while not queue.empty():
             events.append(queue.get_nowait())
 
-        assert len(events) >= 2
-        event_names = [e["event"] for e in events]
-        assert "stage_complete" in event_names
+        complete = [e for e in events if e["event"] == "stage_complete"]
+        assert len(complete) == 1
+        assert "confidence" in complete[0]["data"]
 
 
 class TestRunSeederTimeout:
     @pytest.mark.asyncio
     async def test_timeout_fires_and_returns_partial(self, monkeypatch):
-        import asyncio
-
-        async def slow_search(self, query, **kwargs):
-            await asyncio.sleep(999)
+        def blocking_search(self, query, **kwargs):
+            time.sleep(2)
             return _MOCK_TAVILY_RESPONSE
 
-        monkeypatch.setattr(
-            "backend.stage0.seeder.TavilyClient.search",
-            slow_search,
-        )
+        monkeypatch.setattr("backend.stage0.seeder.TavilyClient.search", blocking_search)
+        llm = MockLLMClient(default_response=json.dumps([{"name": "X"}]))
 
-        llm = MockLLMClient(default_response=_FAKE_RESULT)
-
-        seed = await run_seeder(
-            scenario="Apple EV at $35K",
-            geography="US",
-            vertical="auto",
-            llm=llm,
-            timeout=0.5,
-        )
+        seed = await run_seeder(scenario="test", geography="US", vertical="auto", llm=llm, timeout=0.5)
 
         assert len(seed.gaps) > 0
-        assert seed.competitors == "unavailable"
-
+        assert seed.competitors == []
+        for name, _ in PIPELINES:
+            assert seed.confidence[name] == "low"
