@@ -22,7 +22,6 @@ _SAMPLE_CSV = "user_id,name,username,user_char,description\n0,A,a,x,y\n"
 class TestStage3Integration:
     @pytest.mark.asyncio
     async def test_all_three_tracks_launched_concurrently(self, monkeypatch):
-        """Verify asyncio.gather runs all 3 tracks even when one fails."""
         from backend.pipeline.sim_stats import SimulationStats
 
         calls = []
@@ -52,9 +51,63 @@ class TestStage3Integration:
 
         assert len(calls) == 3
         assert result.track1.status == "completed"
-        assert result.track2 is None  # Track 2 crashed, caught by return_exceptions
+        assert result.track2 is None
+        assert result.track2_failed is True
         assert result.track3 is not None
+        assert result.track3_failed is False
         assert result.stats.total_rounds == 10
+
+    @pytest.mark.asyncio
+    async def test_track3_crash_distinguished_from_zero_reports(self, monkeypatch):
+        """Track 3 raising → track3_failed=True, track3 is empty list."""
+        from backend.pipeline.sim_stats import SimulationStats
+
+        async def mock_track1(csv, rounds, sim_id=None, timeout=1200):
+            return Track1Result(status="completed", actions_jsonl_path="/fake/a.jsonl", rounds=3)
+
+        async def mock_track2(seed, llm, sim_id=None, timeout=1200):
+            return BoardroomResult(status="completed")
+
+        async def mock_track3(seed, llm, analyst_count=10, sim_id=None):
+            raise RuntimeError("Analyst desk crash")
+
+        monkeypatch.setattr("backend.stage3.track1_oasis.run_track1", mock_track1)
+        monkeypatch.setattr("backend.stage3.track2_boardroom.run_track2", mock_track2)
+        monkeypatch.setattr("backend.stage3.track3_analyst.generate_analyst_reports", mock_track3)
+        monkeypatch.setattr(SimulationStats, "aggregate", lambda path: SimulationStats())
+
+        from backend.stage3 import run_stage3
+
+        seed = _make_seed()
+        llm = MockLLMClient()
+        result = await run_stage3(seed, _SAMPLE_CSV, llm, rounds=3)
+
+        assert result.track3_failed is True
+        assert result.track3 == []
+        assert result.track2_failed is False
+
+    @pytest.mark.asyncio
+    async def test_stats_unavailable_when_track1_no_path(self, monkeypatch):
+        async def mock_track1(csv, rounds, sim_id=None, timeout=1200):
+            return Track1Result(status="completed", actions_jsonl_path=None, rounds=rounds)
+
+        async def mock_track2(seed, llm, sim_id=None, timeout=1200):
+            return BoardroomResult(status="completed")
+
+        async def mock_track3(seed, llm, analyst_count=10, sim_id=None):
+            return []
+
+        monkeypatch.setattr("backend.stage3.track1_oasis.run_track1", mock_track1)
+        monkeypatch.setattr("backend.stage3.track2_boardroom.run_track2", mock_track2)
+        monkeypatch.setattr("backend.stage3.track3_analyst.generate_analyst_reports", mock_track3)
+
+        from backend.stage3 import run_stage3
+
+        seed = _make_seed()
+        llm = MockLLMClient()
+        result = await run_stage3(seed, _SAMPLE_CSV, llm, rounds=3)
+
+        assert result.stats is None
 
     @pytest.mark.asyncio
     async def test_sse_stage_events_emitted(self, monkeypatch):
@@ -71,7 +124,7 @@ class TestStage3Integration:
             return BoardroomResult(status="completed")
 
         async def mock_track3(seed, llm, analyst_count=10, sim_id=None):
-            return []
+            raise RuntimeError("track 3 crash")
 
         monkeypatch.setattr("backend.stage3.track1_oasis.run_track1", mock_track1)
         monkeypatch.setattr("backend.stage3.track2_boardroom.run_track2", mock_track2)
@@ -91,4 +144,8 @@ class TestStage3Integration:
 
         names = [e["event"] for e in events]
         assert "stage_start" in names
-        assert "stage_complete" in names
+        complete = [e for e in events if e["event"] == "stage_complete"]
+        assert len(complete) == 1
+        data = complete[0]["data"]
+        assert data["t3_failed"] is True
+        assert data["t3_reports"] == 0

@@ -8,21 +8,29 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from backend.llm.client import LLMClient
 from backend.pipeline.sim_stats import SimulationStats
 from backend.stage0.seeder import RealitySeed
+
+if TYPE_CHECKING:
+    from backend.stage3.track1_oasis import Track1Result
+    from backend.stage3.track2_boardroom import BoardroomResult
+    from backend.stage3.track3_analyst import AnalystReport
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class Stage3Result:
-    track1: object | None = None
-    track2: object | None = None
-    track3: list | None = None
+    track1: Track1Result | None = None  # noqa: F821
+    track2: BoardroomResult | None = None  # noqa: F821
+    track3: list[AnalystReport] = field(default_factory=list)  # noqa: F821
     stats: SimulationStats | None = None
+    track2_failed: bool = False
+    track3_failed: bool = False
 
 
 async def run_stage3(
@@ -33,10 +41,6 @@ async def run_stage3(
     sim_id: str | None = None,
 ) -> Stage3Result:
     """Run all 3 simulation tracks in parallel.
-
-    - Track 1 (OASIS): public narrative simulation
-    - Track 2 (Boardroom): competitive response deliberation
-    - Track 3 (Analyst Desk): sell-side analyst reports
 
     Any track may fail without crashing the others
     (asyncio.gather with return_exceptions=True).
@@ -62,10 +66,13 @@ async def run_stage3(
     track2_result = r2 if isinstance(r2, BoardroomResult) else None
     track3_result = r3 if isinstance(r3, list) else []
 
-    if isinstance(r1, Exception):
-        logger.warning("Track 1 failed: %s", r1)
-    if isinstance(r2, Exception):
+    t2_failed = isinstance(r2, Exception)
+    t3_failed = isinstance(r3, Exception)
+
+    if t2_failed:
         logger.warning("Track 2 failed: %s", r2)
+    if t3_failed:
+        logger.warning("Track 3 failed: %s", r3)
 
     stats = None
     if track1_result and track1_result.actions_jsonl_path:
@@ -82,7 +89,9 @@ async def run_stage3(
                 "stage": "stage3",
                 "t1_status": track1_result.status if track1_result else "failed",
                 "t2_status": track2_result.status if track2_result else "failed",
+                "t2_failed": t2_failed,
                 "t3_reports": len(track3_result),
+                "t3_failed": t3_failed,
                 "stats_available": stats is not None,
             },
         )
@@ -92,4 +101,6 @@ async def run_stage3(
         track2=track2_result,
         track3=track3_result,
         stats=stats,
+        track2_failed=t2_failed,
+        track3_failed=t3_failed,
     )
