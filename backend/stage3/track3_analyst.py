@@ -6,6 +6,8 @@ import asyncio
 import json
 import logging
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from backend.llm.client import LLMClient, ModelTier
@@ -21,8 +23,8 @@ class AnalystReport(BaseModel):
     earnings_revision_pct: float
     price_target_revision_pct: float
     thesis_update: str
-    conviction: str  # high | medium | low
-    rating_change: str  # upgrade | downgrade | maintain | initiate
+    conviction: Literal["high", "medium", "low"]
+    rating_change: Literal["upgrade", "downgrade", "maintain", "initiate"]
 
 
 ANALYST_FIRMS = [
@@ -52,19 +54,24 @@ def _build_analyst_prompt(seed: RealitySeed, firm: str, idx: int) -> str:
     )
 
 
+REQUIRED_REPORT_KEYS = {
+    "analyst_name", "target_company", "earnings_revision_pct",
+    "price_target_revision_pct", "thesis_update", "conviction", "rating_change",
+}
+
+
 def _parse_report(raw: str, firm: str) -> AnalystReport | None:
     try:
         data = json.loads(raw)
-        data.setdefault("firm", firm)
-        data.setdefault("analyst_name", f"{firm} Analyst")
-        data.setdefault("target_company", "Unknown")
-        data.setdefault("earnings_revision_pct", 0.0)
-        data.setdefault("price_target_revision_pct", 0.0)
-        data.setdefault("thesis_update", "")
-        data.setdefault("conviction", "medium")
-        data.setdefault("rating_change", "maintain")
+        # firm is injected by us, not expected from LLM
+        data["firm"] = firm
+        # Reject if any required key is missing from the LLM response
+        missing = REQUIRED_REPORT_KEYS - set(data)
+        if missing:
+            logger.warning("Analyst report missing required keys: %s", missing)
+            return None
         return AnalystReport(**data)
-    except (json.JSONDecodeError, ValueError) as e:
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
         logger.warning("Failed to parse analyst report: %s", e)
         return None
 

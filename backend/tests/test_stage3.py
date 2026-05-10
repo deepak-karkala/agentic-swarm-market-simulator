@@ -22,6 +22,27 @@ _VALID_REPORT = json.dumps({
 
 _INVALID_JSON = "not valid json {{{"
 
+_VALID_JSON_BAD_CONVICTION = json.dumps({
+    "analyst_name": "Jane Smith",
+    "firm": "GS",
+    "target_company": "Tesla",
+    "earnings_revision_pct": -5.0,
+    "price_target_revision_pct": -10.0,
+    "thesis_update": "Risk.",
+    "conviction": "impossible",
+    "rating_change": "downgrade",
+})
+
+_VALID_JSON_MISSING_KEY = json.dumps({
+    "analyst_name": "Jane Smith",
+    "target_company": "Tesla",
+    "earnings_revision_pct": -5.0,
+    "price_target_revision_pct": -10.0,
+    "thesis_update": "Risk.",
+    "rating_change": "downgrade",
+    # conviction intentionally omitted
+})
+
 
 def _make_seed(**overrides) -> RealitySeed:
     seed = RealitySeed(geography="US", vertical="auto", scenario="Apple EV")
@@ -98,6 +119,34 @@ class TestGenerateAnalystReports:
         reports = await generate_analyst_reports(seed, llm, analyst_count=3)
 
         assert len(reports) == 0  # all 3 skipped
+
+    @pytest.mark.asyncio
+    async def test_valid_json_bad_conviction_retries_then_skips(self, monkeypatch):
+        async def bad_conviction(prompt, tier, **kwargs):
+            return _VALID_JSON_BAD_CONVICTION
+
+        llm = MockLLMClient(default_response=_VALID_REPORT)
+        monkeypatch.setattr(llm, "complete", bad_conviction)
+
+        seed = _make_seed()
+        reports = await generate_analyst_reports(seed, llm, analyst_count=2)
+
+        # Both attempts (original + retry) return bad conviction → all skipped
+        assert len(reports) == 0
+
+    @pytest.mark.asyncio
+    async def test_missing_key_retries_then_skips(self, monkeypatch):
+        async def missing_key(prompt, tier, **kwargs):
+            return _VALID_JSON_MISSING_KEY
+
+        llm = MockLLMClient(default_response=_VALID_REPORT)
+        monkeypatch.setattr(llm, "complete", missing_key)
+
+        seed = _make_seed()
+        reports = await generate_analyst_reports(seed, llm, analyst_count=2)
+
+        # Both attempts (original + retry) missing conviction → all skipped
+        assert len(reports) == 0
 
 
 class TestAnalystDeskSSE:
