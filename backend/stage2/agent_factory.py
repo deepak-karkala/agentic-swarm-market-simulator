@@ -18,8 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 class AgentProfile(BaseModel):
-    """A single agent profile for OASIS or other simulation tracks."""
-
     user_id: str
     name: str
     username: str
@@ -40,47 +38,45 @@ class AgentFactoryError(Exception):
     """Raised when profile generation falls below the minimum threshold."""
 
 
-def _build_consumer_prompt(context: dict, index: int) -> str:
+def _prompt_consumer(context: dict, index: int) -> str:
     return (
         f"Generate a realistic social media user profile as valid JSON with keys: "
         f"name, username, user_char, description. "
-        f"This person lives in {context.get('geography', 'US')} and is interested in "
-        f"{context.get('vertical', 'tech')}. "
-        f"Scenario context: {context.get('scenario', '')}. "
-        f"Their personality should be diverse and unique (index {index}). "
-        f"Return ONLY the JSON object, no other text."
+        f"Person lives in {context.get('geography', 'US')}, interested in "
+        f"{context.get('vertical', 'tech')}. Scenario: {context.get('scenario', '')}. "
+        f"Index {index} for diversity. Return ONLY JSON."
     )
 
 
-def _build_csuite_prompt(context: dict, competitor: dict, exec_type: str) -> str:
+def _prompt_csuite(context: dict, competitor: dict, role: str, idx: int) -> str:
     return (
-        f"Generate a realistic executive profile as valid JSON with keys: "
+        f"Generate an executive profile as valid JSON with keys: "
         f"name, username, user_char, description. "
-        f"This person is the {exec_type} of {competitor.get('name', 'a company')}. "
+        f"{role} of {competitor.get('name', 'a company')}. "
         f"Industry: {context.get('vertical', 'tech')}. "
         f"Scenario: {context.get('scenario', '')}. "
-        f"Return ONLY the JSON object, no other text."
+        f"Index {idx} for diversity. Return ONLY JSON."
     )
 
 
-def _build_analyst_prompt(context: dict, index: int) -> str:
+def _prompt_analyst(context: dict, index: int) -> str:
     return (
-        f"Generate a realistic sell-side financial analyst profile as valid JSON "
-        f"with keys: name, username, user_char, description. "
-        f"This analyst covers the {context.get('vertical', 'tech')} sector. "
+        f"Generate a sell-side analyst profile as valid JSON with keys: "
+        f"name, username, user_char, description. "
+        f"Covers {context.get('vertical', 'tech')} sector. "
         f"Geography: {context.get('geography', 'US')}. "
         f"Scenario: {context.get('scenario', '')}. "
-        f"Return ONLY the JSON object, no other text."
+        f"Index {index} for diversity. Return ONLY JSON."
     )
 
 
-def _parse_profile(raw: str, user_id: str, username_fallback: str) -> AgentProfile | None:
+def _parse_profile(raw: str, user_id: str, fallback: str) -> AgentProfile | None:
     try:
         data = json.loads(raw)
         return AgentProfile(
             user_id=user_id,
-            name=data.get("name", username_fallback),
-            username=data.get("username", username_fallback),
+            name=data.get("name", fallback),
+            username=data.get("username", fallback),
             user_char=data.get("user_char", data.get("description", "")),
             description=data.get("description", data.get("user_char", "")),
         )
@@ -105,8 +101,10 @@ async def generate_agents(
 ) -> AgentGenerationResult:
     """Generate all agent profiles for the simulation.
 
-    Uses asyncio.Semaphore(10) to limit concurrent LLM calls.
-    Individual profile failures are skipped; <80% success rate raises.
+    - Consumer profiles: Haiku (high volume, low cost)
+    - C-suite + Analyst profiles: Sonnet (quality matters)
+    - asyncio.Semaphore(10) limits concurrent LLM calls
+    - Individual failures are skipped; <80% total raises AgentFactoryError
     """
     from backend.pipeline.task_manager import task_manager
 
@@ -117,66 +115,68 @@ async def generate_agents(
         )
 
     context = graph.raw_context or {}
+    sem = asyncio.Semaphore(10)
 
-    semaphore = asyncio.Semaphore(10)
-    profiles: list[AgentProfile] = []
-
-    async def _generate_one(user_id: str, prompt: str, fallback_user: str) -> AgentProfile | None:
-        async with semaphore:
+    async def _generate(user_id: str, prompt: str, tier: ModelTier) -> AgentProfile | None:
+        async with sem:
             try:
-                raw = await llm.complete(prompt, tier=ModelTier.HAIKU)
-                return _parse_profile(raw, user_id, fallback_user)
+                raw = await llm.complete(prompt, tier=tier)
+                return _parse_profile(raw, user_id, "agent")
             except LLMRateLimitError:
-                logger.warning("Rate limit hit for agent %s — skipping", user_id)
+                logger.warning("Rate limit for agent %s — skipping", user_id)
                 return None
             except Exception:
                 logger.exception("Failed to generate profile for %s", user_id)
                 return None
 
+    tasks: list[tuple[str, ModelTier, str | None]] = []
+
     # Consumer agents (Haiku)
-    tasks = []
     for i in range(consumer_count):
         uid = f"u_{i:03d}"
-        prompt = _build_consumer_prompt(context, i)
-        tasks.append(_generate_one(uid, prompt, f"user_{i}"))
+        prompt = _prompt_consumer(context, i)
+        tasks.append((uid, ModelTier.HAIKU, prompt))
 
     # C-suite agents (Sonnet)
     competitors = context.get("competitors", [])
     if isinstance(competitors, dict):
         competitors = [competitors]
     exec_roles = ["CEO", "CMO", "CFO", "Strategy VP", "Product VP"]
-    for comp_idx, comp in enumerate(competitors[:10]):
-        for role_idx, role in enumerate(exec_roles):
-            if len([t for t in tasks]) >= consumer_count + csuite_count:
+    cs_generated = 0
+    for comp in competitors:
+        for role in exec_roles:
+            if cs_generated >= csuite_count:
                 break
-            uid = f"c_{comp_idx:03d}_{role_idx:02d}"
-            prompt = _build_csuite_prompt(context, comp, role)
-            tasks.append(_generate_one(uid, prompt, f"exec_{comp_idx}_{role_idx}"))
+            uid = f"c_{cs_generated:03d}"
+            prompt = _prompt_csuite(context, comp, role, cs_generated)
+            tasks.append((uid, ModelTier.SONNET, prompt))
+            cs_generated += 1
+        if cs_generated >= csuite_count:
+            break
 
     # Analyst agents (Sonnet)
     for i in range(analyst_count):
         uid = f"a_{i:03d}"
-        prompt = _build_analyst_prompt(context, i)
-        tasks.append(_generate_one(uid, prompt, f"analyst_{i}"))
+        prompt = _prompt_analyst(context, i)
+        tasks.append((uid, ModelTier.SONNET, prompt))
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    scheduled_count = len(tasks)
+    threshold = int(scheduled_count * 0.8)
 
-    for r in results:
+    futures = [asyncio.ensure_future(_generate(uid, prompt, tier)) for uid, tier, prompt in tasks]
+    done, _ = await asyncio.wait(futures)
+
+    profiles: list[AgentProfile] = []
+    for f in done:
+        r = f.result()
         if isinstance(r, AgentProfile):
             profiles.append(r)
-        elif isinstance(r, Exception):
-            logger.warning("Agent generation task raised: %s", r)
 
-    total_target = consumer_count + csuite_count + analyst_count
-    threshold = int(total_target * 0.8)
     if len(profiles) < threshold:
         raise AgentFactoryError(
-            f"Only {len(profiles)}/{total_target} profiles generated "
+            f"Only {len(profiles)}/{scheduled_count} profiles generated "
             f"(below 80% threshold of {threshold})"
         )
-
-    csv_output = _profiles_to_csv(profiles)
-    reddit_output = _profiles_to_reddit_json(profiles)
 
     if sim_id:
         task_manager.emit_event(
@@ -185,8 +185,8 @@ async def generate_agents(
         )
 
     return AgentGenerationResult(
-        twitter_profiles_csv=csv_output,
-        reddit_profiles_json=reddit_output,
+        twitter_profiles_csv=_profiles_to_csv(profiles),
+        reddit_profiles_json=_profiles_to_reddit_json(profiles),
         total_agents=len(profiles),
     )
 
@@ -201,16 +201,18 @@ def _profiles_to_csv(profiles: list[AgentProfile]) -> str:
 
 
 def _profiles_to_reddit_json(profiles: list[AgentProfile]) -> str:
-    items = []
-    for p in profiles:
-        items.append({
-            "realname": p.name,
+    return json.dumps([
+        {
+            "user_id": p.user_id,
             "username": p.username,
+            "name": p.name,
             "bio": p.description,
             "persona": p.user_char,
+            "karma": 1000,
             "age": 30,
             "gender": "unspecified",
             "mbti": "INTJ",
             "country": "US",
-        })
-    return json.dumps(items)
+        }
+        for p in profiles
+    ])
