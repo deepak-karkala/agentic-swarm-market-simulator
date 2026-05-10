@@ -135,16 +135,24 @@ async def _run_oasis_simulation(
         await env.reset()
 
         # Seed round (round 0): first agent posts the trigger
+        last_post_id = 0
+        last_trace_rowid = 0
         first = agent_graph.get_agent(0)
         if first is not None:
             actions = {first: ManualAction(action_type=ActionType.CREATE_POST, action_args={"content": "🚨 BREAKING: Major market announcement."})}
             await env.step(actions)
-        _append_posts_jsonl(db_path, tmpdir / "actions.jsonl", round_num=0)
+        last_post_id, last_trace_rowid = _append_posts_jsonl(
+            db_path, tmpdir / "actions.jsonl", round_num=0,
+            last_post_id=last_post_id, last_trace_rowid=last_trace_rowid,
+        )
 
         for r in range(1, rounds + 1):
             actions = {agent: LLMAction() for _, agent in agent_graph.get_agents()}
             await env.step(actions)
-            _append_posts_jsonl(db_path, tmpdir / "actions.jsonl", round_num=r)
+            last_post_id, last_trace_rowid = _append_posts_jsonl(
+                db_path, tmpdir / "actions.jsonl", round_num=r,
+                last_post_id=last_post_id, last_trace_rowid=last_trace_rowid,
+            )
 
             if sim_id:
                 task_manager.emit_event(
@@ -165,20 +173,33 @@ async def _run_oasis_simulation(
     # tmpdir intentionally not cleaned up — caller owns the artifacts
 
 
-def _append_posts_jsonl(db_path: Path, jsonl_path: Path, round_num: int) -> int:
-    """Append new post records from SQLite to JSONL with the current round."""
+def _append_posts_jsonl(
+    db_path: Path,
+    jsonl_path: Path,
+    round_num: int,
+    last_post_id: int = 0,
+    last_trace_rowid: int = 0,
+) -> tuple[int, int]:
+    """Export only NEW post and trace records since the last call.
+
+    Uses post_id and trace rowid as watermarks to avoid duplicating
+    previously-exported records across rounds.
+    """
     if not db_path.exists():
-        return 0
+        return last_post_id, last_trace_rowid
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    count = 0
+    max_post_id = last_post_id
+    max_trace_rowid = last_trace_rowid
 
     with open(jsonl_path, "a") as f:
-        cursor.execute("SELECT * FROM post ORDER BY created_at")
+        cursor.execute(
+            "SELECT * FROM post WHERE post_id > ? ORDER BY created_at",
+            (last_post_id,),
+        )
         for row in cursor.fetchall():
-            # Skip posts already written (idempotent — post_id is unique)
             action = {
                 "agent_id": f"u_{row['user_id']:03d}",
                 "action": "CREATE_POST",
@@ -190,9 +211,13 @@ def _append_posts_jsonl(db_path: Path, jsonl_path: Path, round_num: int) -> int:
                 "num_shares": row["num_shares"],
             }
             f.write(json.dumps(action) + "\n")
-            count += 1
+            if row["post_id"] > max_post_id:
+                max_post_id = row["post_id"]
 
-        cursor.execute("SELECT * FROM trace ORDER BY created_at")
+        cursor.execute(
+            "SELECT rowid, * FROM trace WHERE rowid > ? ORDER BY created_at",
+            (last_trace_rowid,),
+        )
         for row in cursor.fetchall():
             action = {
                 "agent_id": f"u_{row['user_id']:03d}",
@@ -202,10 +227,11 @@ def _append_posts_jsonl(db_path: Path, jsonl_path: Path, round_num: int) -> int:
                 "timestamp": row["created_at"],
             }
             f.write(json.dumps(action) + "\n")
-            count += 1
+            if row["rowid"] > max_trace_rowid:
+                max_trace_rowid = row["rowid"]
 
     conn.close()
-    return count
+    return max_post_id, max_trace_rowid
 
 
 def _csv_row_count(csv_text: str) -> int:

@@ -193,18 +193,41 @@ class TestAppendPostsJsonl:
         conn.commit()
         conn.close()
 
-        _append_posts_jsonl(db_path, jsonl_path, round_num=0)
-        _append_posts_jsonl(db_path, jsonl_path, round_num=1)
+        # Round 0: exports all 3 rows (2 posts + 1 trace)
+        lp, lt = _append_posts_jsonl(db_path, jsonl_path, round_num=0)
+        assert lp == 2
+        assert lt == 1
+
+        # Add new records for round 1
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("INSERT INTO post VALUES (3, 2, 'Round 1 post', '2025-01-02', 5, 3)")
+        conn.execute("INSERT INTO trace VALUES (1, '2025-01-02', 'repost', 'shared post 1')")
+        conn.commit()
+        conn.close()
+
+        # Round 1: only exports the 2 new rows, not the 3 old ones
+        lp, lt = _append_posts_jsonl(db_path, jsonl_path, round_num=1, last_post_id=lp, last_trace_rowid=lt)
+        assert lp == 3
+        assert lt == 2
 
         lines = jsonl_path.read_text().strip().split("\n")
-        assert len(lines) >= 4
-
         records = [json.loads(line) for line in lines]
-        rounds_seen = set(r["round"] for r in records)
-        assert rounds_seen == {0, 1}
+
+        # 3 from round 0 + 2 from round 1 = 5 total, no duplicates
+        assert len(records) == 5
+
+        # Verify: each post_id appears exactly once
+        post_ids = [r["post_id"] for r in records if "post_id" in r]
+        assert len(post_ids) == len(set(post_ids))
+
+        rounds_per_post = {}
         for r in records:
-            assert "agent_id" in r
-            assert "action" in r
+            pid = r.get("post_id")
+            if pid and pid in rounds_per_post:
+                rounds_per_post[pid].add(r["round"])
+        # No post_id should have multiple rounds
+        for pid, rounds_set in rounds_per_post.items():
+            assert len(rounds_set) == 1, f"post_id {pid} has rounds {rounds_set}"
 
 
 class TestRunTrack1:
