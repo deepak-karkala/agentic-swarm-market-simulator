@@ -21,11 +21,13 @@ class MockLLMClient:
         responses: dict[str, str] | None = None,
         cost_per_call: float = 0.0,
         cost_cap: float = 10.0,
+        default_response: str | None = None,
     ):
         self._responses: dict[str, str] = dict(responses or {})
         self._cost_per_call = cost_per_call
         self._cost_cap = cost_cap
         self._total_cost = 0.0
+        self._default_response = default_response
 
     @property
     def total_cost_usd(self) -> float:
@@ -42,9 +44,14 @@ class MockLLMClient:
                 match = key
 
         if not match:
-            raise MockFixtureMissing(
-                f"No fixture found for prompt: {prompt[:64]}..."
-            )
+            if self._default_response is not None:
+                result = self._default_response
+            else:
+                raise MockFixtureMissing(
+                    f"No fixture found for prompt: {prompt[:64]}..."
+                )
+        else:
+            result = self._responses[match]
 
         self._total_cost += self._cost_per_call
         if self._total_cost > self._cost_cap:
@@ -52,4 +59,4 @@ class MockLLMClient:
                 f"Cost cap exceeded: ${self._total_cost:.4f} > ${self._cost_cap:.2f}"
             )
 
-        return self._responses[match]
+        return result
