@@ -4,7 +4,7 @@ import pytest
 
 from backend.llm.mock_client import MockLLMClient
 from backend.stage0.seeder import RealitySeed
-from backend.stage1.graph_builder import GraphResult, build_graph
+from backend.stage1.graph_builder import GraphResult, build_graph, _format_context_for_zep
 
 
 def _make_seed(**overrides) -> RealitySeed:
@@ -25,13 +25,7 @@ class TestGraphResult:
         result = GraphResult()
         assert result.fallback_mode is True
         assert result.graph_id is None
-        assert result.node_count == 0
-
-    def test_success_result(self):
-        result = GraphResult(graph_id="g_123", node_count=47, fallback_mode=False, ontology_set=True)
-        assert result.graph_id == "g_123"
-        assert result.node_count == 47
-        assert result.fallback_mode is False
+        assert result.estimated_node_count == 0
 
 
 class TestBuildGraphFallback:
@@ -43,7 +37,6 @@ class TestBuildGraphFallback:
         llm = MockLLMClient()
         result = await build_graph(seed, llm)
 
-        assert isinstance(result, GraphResult)
         assert result.fallback_mode is True
         assert result.graph_id is None
         assert result.raw_context is not None
@@ -61,6 +54,80 @@ class TestBuildGraphFallback:
         assert ctx["scenario"] == "Apple EV"
         assert ctx["geography"] == "US"
         assert isinstance(ctx["competitors"], list)
+
+
+class TestBuildGraphZepSuccess:
+    @pytest.mark.asyncio
+    async def test_zep_called_with_correct_graph_name(self, monkeypatch):
+        monkeypatch.setenv("ZEP_API_KEY", "zep-fake-key")
+
+        calls = {}
+
+        class MockGraph:
+            @staticmethod
+            def create(graph_id, name=None, description=None):
+                calls["create"] = {"graph_id": graph_id, "description": description}
+                return graph_id
+
+            @staticmethod
+            def add_data(graph_id, data):
+                calls["add_data"] = {"graph_id": graph_id, "data_len": len(data)}
+
+        class MockZep:
+            def __init__(self, api_key):
+                self.graph = MockGraph()
+
+        monkeypatch.setattr(
+            "backend.stage1.graph_builder.Zep",
+            MockZep,
+        )
+
+        seed = _make_seed()
+        llm = MockLLMClient()
+        result = await build_graph(seed, llm)
+
+        assert result.fallback_mode is False
+        assert result.graph_id == "sim-US-auto"
+        assert result.estimated_node_count > 0
+        assert calls["create"]["graph_id"] == "sim-US-auto"
+        assert "Apple EV" in calls["create"]["description"]
+        assert calls["add_data"]["graph_id"] == "sim-US-auto"
+        assert calls["add_data"]["data_len"] > 100
+
+    @pytest.mark.asyncio
+    async def test_zep_failure_falls_back_with_context(self, monkeypatch):
+        monkeypatch.setenv("ZEP_API_KEY", "zep-fake-key")
+
+        class FailingZep:
+            def __init__(self, api_key):
+                raise Exception("Zep API down")
+
+        monkeypatch.setattr(
+            "backend.stage1.graph_builder.Zep",
+            FailingZep,
+        )
+
+        seed = _make_seed()
+        llm = MockLLMClient()
+        result = await build_graph(seed, llm)
+
+        assert result.fallback_mode is True
+        assert result.graph_id is None
+        assert result.raw_context is not None
+        assert result.raw_context["competitors"][0]["name"] == "Tesla"
+
+
+class TestFormatContext:
+    def test_includes_all_sections(self):
+        seed = _make_seed()
+        from backend.stage1.graph_builder import _seed_to_context
+        ctx = _seed_to_context(seed)
+        text = _format_context_for_zep(ctx)
+
+        assert "Apple EV" in text
+        assert "Competitors" in text
+        assert "Geographic Context" in text
+        assert "Regulatory Environment" in text
 
 
 class TestBuildGraphSSE:
@@ -85,3 +152,43 @@ class TestBuildGraphSSE:
         event_names = [e["event"] for e in events]
         assert "stage_start" in event_names
         assert "stage_complete" in event_names
+
+    @pytest.mark.asyncio
+    async def test_stage_events_emitted_on_success(self, monkeypatch):
+        monkeypatch.setenv("ZEP_API_KEY", "zep-fake-key")
+
+        class MockGraph:
+            @staticmethod
+            def create(graph_id, name=None, description=None):
+                return graph_id
+
+            @staticmethod
+            def add_data(graph_id, data):
+                pass
+
+        class MockZep:
+            def __init__(self, api_key):
+                self.graph = MockGraph()
+
+        monkeypatch.setattr(
+            "backend.stage1.graph_builder.Zep",
+            MockZep,
+        )
+
+        from backend.pipeline.task_manager import task_manager
+
+        task_manager.reset()
+        sim_id = task_manager.init_sim()
+
+        seed = _make_seed()
+        llm = MockLLMClient()
+        await build_graph(seed, llm, sim_id=sim_id)
+
+        queue = task_manager.get_queue(sim_id)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        complete = [e for e in events if e["event"] == "stage_complete"]
+        assert len(complete) == 1
+        assert complete[0]["data"]["graph_id"] == "sim-US-auto"
