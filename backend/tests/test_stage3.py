@@ -8,6 +8,7 @@ import pytest
 from backend.llm.mock_client import MockLLMClient
 from backend.stage0.seeder import RealitySeed
 from backend.stage3.track1_oasis import Track1Result, _append_posts_jsonl, run_track1
+from backend.stage3.track2_boardroom import BoardroomResult, run_track2
 from backend.stage3.track3_analyst import AnalystReport, generate_analyst_reports
 
 
@@ -317,3 +318,77 @@ class TestRunTrack1:
         names = [e["event"] for e in events]
         assert "track_start" in names
         assert "track_complete" in names
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Track 2: Boardroom CAMEL-AI
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestBoardroomResult:
+    def test_default_is_failed(self):
+        r = BoardroomResult()
+        assert r.status == "failed"
+        assert r.decisions == []
+
+    def test_completed_result(self):
+        from backend.stage3.track2_boardroom import BoardroomDecision
+        d = BoardroomDecision(competitor="Tesla", action_type="price_cut", timeline="immediate", stated_rationale="Defend share.")
+        r = BoardroomResult(status="completed", decisions=[d])
+        assert r.status == "completed"
+        assert len(r.decisions) == 1
+
+
+class TestRunTrack2:
+    @pytest.mark.asyncio
+    async def test_init_failure_returns_cleanly(self, monkeypatch):
+        llm = MockLLMClient(default_response=json.dumps({
+            "competitor": "Tesla", "action_type": "price_cut",
+            "timeline": "immediate", "stated_rationale": "Defend.",
+            "confidence": "high",
+        }))
+
+        seed = _make_seed()
+        result = await run_track2(seed, llm)
+        assert result.status == "completed"
+        assert len(result.decisions) >= 1
+
+    @pytest.mark.asyncio
+    async def test_produces_decisions_via_llm_fallback(self, monkeypatch):
+        llm = MockLLMClient(default_response=json.dumps({
+            "competitor": "Tesla", "action_type": "price_cut",
+            "timeline": "immediate", "stated_rationale": "Defend market share.",
+            "confidence": "high",
+        }))
+
+        seed = _make_seed()
+        result = await run_track2(seed, llm)
+
+        assert result.status == "completed"
+        assert len(result.decisions) >= 1
+        assert result.decisions[0].competitor == "Tesla"
+        assert result.decisions[0].action_type == "price_cut"
+
+    @pytest.mark.asyncio
+    async def test_track_events_emitted(self, monkeypatch):
+        from backend.pipeline.task_manager import task_manager
+        task_manager.reset()
+        sim_id = task_manager.init_sim()
+
+        llm = MockLLMClient(default_response=json.dumps({
+            "competitor": "Tesla", "action_type": "wait",
+            "timeline": "unclear", "stated_rationale": "Monitor.",
+            "confidence": "low",
+        }))
+
+        seed = _make_seed()
+        await run_track2(seed, llm, sim_id=sim_id)
+
+        queue = task_manager.get_queue(sim_id)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        names = [e["event"] for e in events]
+        assert "track_start" in names
+        assert "track_complete" in names
+        complete = [e for e in events if e["event"] == "track_complete"]
+        assert complete[0]["data"]["track"] == 2

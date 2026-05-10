@@ -36,7 +36,7 @@ class MockLLMClient:
     def reset_cost(self) -> None:
         self._total_cost = 0.0
 
-    async def complete(self, prompt: str, tier: ModelTier) -> str:
+    async def complete(self, prompt: str, tier: ModelTier, **kwargs) -> str:
         """Return the fixture response whose key is the longest prefix match."""
         match = ""
         for key, value in self._responses.items():
