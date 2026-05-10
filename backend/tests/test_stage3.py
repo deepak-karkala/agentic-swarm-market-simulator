@@ -1,5 +1,6 @@
-"""Tests for Stage 3: Track 1 (OASIS) and Track 3 (Analyst Desk)."""
+"""Tests for Stage 3: Track 1 (OASIS), Track 2 (Boardroom), Track 3 (Analyst Desk)."""
 
+import asyncio
 import json
 import sqlite3
 
@@ -340,20 +341,7 @@ class TestBoardroomResult:
 
 class TestRunTrack2:
     @pytest.mark.asyncio
-    async def test_init_failure_returns_cleanly(self, monkeypatch):
-        llm = MockLLMClient(default_response=json.dumps({
-            "competitor": "Tesla", "action_type": "price_cut",
-            "timeline": "immediate", "stated_rationale": "Defend.",
-            "confidence": "high",
-        }))
-
-        seed = _make_seed()
-        result = await run_track2(seed, llm)
-        assert result.status == "completed"
-        assert len(result.decisions) >= 1
-
-    @pytest.mark.asyncio
-    async def test_produces_decisions_via_llm_fallback(self, monkeypatch):
+    async def test_produces_decisions_via_llm(self, monkeypatch):
         llm = MockLLMClient(default_response=json.dumps({
             "competitor": "Tesla", "action_type": "price_cut",
             "timeline": "immediate", "stated_rationale": "Defend market share.",
@@ -364,9 +352,55 @@ class TestRunTrack2:
         result = await run_track2(seed, llm)
 
         assert result.status == "completed"
+        assert result.camel_used is False
         assert len(result.decisions) >= 1
         assert result.decisions[0].competitor == "Tesla"
         assert result.decisions[0].action_type == "price_cut"
+
+    @pytest.mark.asyncio
+    async def test_invalid_decision_json_skipped(self, monkeypatch):
+        """Valid JSON with missing keys → parse failure → no decisions."""
+        llm = MockLLMClient(default_response=json.dumps({
+            "competitor": "Tesla",
+            # action_type, timeline, stated_rationale, confidence all missing
+        }))
+
+        seed = _make_seed()
+        result = await run_track2(seed, llm)
+
+        assert result.status == "completed"
+        assert len(result.decisions) == 0  # silently skipped
+
+    @pytest.mark.asyncio
+    async def test_bad_enum_value_rejected(self, monkeypatch):
+        """Invalid action_type enum → Pydantic ValueError → parse failure."""
+        llm = MockLLMClient(default_response=json.dumps({
+            "competitor": "Tesla", "action_type": "nuclear_strike",
+            "timeline": "immediate", "stated_rationale": "Win.",
+            "confidence": "high",
+        }))
+
+        seed = _make_seed()
+        result = await run_track2(seed, llm)
+
+        assert len(result.decisions) == 0
+
+    @pytest.mark.asyncio
+    async def test_timeout_returns_cleanly(self, monkeypatch):
+        """asyncio.TimeoutError → BoardroomResult(status='timeout')."""
+
+        async def slow_complete(prompt, tier, **kwargs):
+            await asyncio.sleep(99)
+            return "{}"
+
+        llm = MockLLMClient()
+        monkeypatch.setattr(llm, "complete", slow_complete)
+
+        seed = _make_seed()
+        result = await run_track2(seed, llm, timeout=0.1)
+
+        assert result.status == "timeout"
+        assert len(result.decisions) == 0
 
     @pytest.mark.asyncio
     async def test_track_events_emitted(self, monkeypatch):
@@ -392,3 +426,4 @@ class TestRunTrack2:
         assert "track_complete" in names
         complete = [e for e in events if e["event"] == "track_complete"]
         assert complete[0]["data"]["track"] == 2
+        assert complete[0]["data"]["camel_used"] is False
