@@ -1,4 +1,5 @@
 import "./styles/globals.css";
+import { useState } from "react";
 import { AppChrome } from "./components/AppChrome/AppChrome";
 import { Pane } from "./components/Pane/Pane";
 import { Button } from "./components/Button/Button";
@@ -9,9 +10,11 @@ import { StageRow } from "./components/StageRow/StageRow";
 import styles from "./App.module.css";
 
 function App() {
+  const [tab, setTab] = useState<"home" | "simulate">("simulate");
+
   return (
     <div>
-      <AppChrome activeTab="simulate" />
+      <AppChrome activeTab={tab} onTabChange={setTab} />
       <main className={styles.main}>
         <h1 style={{ fontFamily: "Inter, sans-serif", fontSize: 18, marginBottom: 16 }}>
           Agentic Market Simulator
