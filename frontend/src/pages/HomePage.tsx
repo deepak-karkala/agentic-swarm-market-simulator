@@ -69,7 +69,7 @@ export function HomePage({ onScenarioSelect }: HomePageProps) {
       </section>
 
       {/* 200-agent swarm excerpt */}
-      <section className={styles.section}>
+      <section className={styles.section} id="section-method">
         <div className={styles.sectionNum}>02</div>
         <div className={styles.sectionContent}>
           <h2 className={styles.sectionHeading}>The 200-Agent Swarm</h2>
