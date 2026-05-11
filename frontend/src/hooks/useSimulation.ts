@@ -24,6 +24,7 @@ export interface SimulationState {
 }
 
 export type SimAction =
+  | { type: "sim_id_set"; simId: string }
   | { type: "stage_start"; stage: string; message: string }
   | { type: "stage_complete"; stage: string; data: Record<string, unknown> }
   | { type: "track_start"; track: number; message: string }
@@ -56,12 +57,15 @@ function makeInitialState(): SimulationState {
 
 function simulationReducer(state: SimulationState, action: SimAction): SimulationState {
   switch (action.type) {
+    case "sim_id_set":
+      return { ...state, simId: action.simId };
     case "stage_start": {
       const nextStatus = STAGE_TRANSITIONS[action.stage] ?? state.status;
       return { ...state, status: nextStatus, currentStage: action.stage };
     }
     case "stage_complete": {
-      const agents = (action.data.agent_count as number) ?? state.agents;
+      const data = action.data;
+      const agents = (data.agent_count as number) ?? state.agents;
       return { ...state, agents };
     }
     case "track_start":
@@ -98,46 +102,47 @@ export function useSimulation() {
     (simId: string) => {
       closeConnection();
       dispatch({ type: "reset" });
-      dispatch({ type: "sim_id_set", simId } as unknown as SimAction);
+      dispatch({ type: "sim_id_set", simId });
 
       const es = new EventSource(`/simulate/${simId}/status`);
       eventSourceRef.current = es;
 
-      es.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          const { event: eventType, ...data } = payload;
-          // The SSE format is: data: {"event": "stage_start", ...}
-          // EventSource.onmessage receives the full JSON
-          const evt = data.event ?? eventType;
-          switch (evt) {
-            case "stage_start":
-              dispatch({ type: "stage_start", stage: data.stage, message: data.message });
-              break;
-            case "stage_complete":
-              dispatch({ type: "stage_complete", stage: data.stage, data: data });
-              break;
-            case "track_start":
-              dispatch({ type: "track_start", track: data.track, message: data.message });
-              break;
-            case "round_complete":
-              dispatch({ type: "round_complete", track: data.track, round: data.round, total_rounds: data.total_rounds ?? 10 });
-              break;
-            case "track_complete":
-              dispatch({ type: "track_complete", track: data.track, status: data.status });
-              break;
-            case "simulation_complete":
-              dispatch({ type: "simulation_complete", sim_id: data.sim_id ?? simId });
-              closeConnection();
-              break;
-            case "cost_update":
-              dispatch({ type: "cost_update", cost_usd: data.cost_usd, cap_usd: data.cap_usd });
-              break;
+      // Named SSE events — the backend emits `event: stage_start`,
+      // `event: stage_complete`, etc. onmessage fires for default
+      // unnamed events, but these are named.
+      const addEvt = (name: string, handler: (data: unknown) => void) => {
+        es.addEventListener(name, (e: Event) => {
+          try {
+            const msg = e as MessageEvent;
+            handler(JSON.parse(msg.data));
+          } catch {
+            // ignore unparseable
           }
-        } catch {
-          // ignore unparseable events
-        }
+        });
       };
+
+      addEvt("stage_start", (data: any) => {
+        dispatch({ type: "stage_start", stage: data.stage, message: data.message });
+      });
+      addEvt("stage_complete", (data: any) => {
+        dispatch({ type: "stage_complete", stage: data.stage, data });
+      });
+      addEvt("track_start", (data: any) => {
+        dispatch({ type: "track_start", track: data.track, message: data.message });
+      });
+      addEvt("round_complete", (data: any) => {
+        dispatch({ type: "round_complete", track: data.track, round: data.round, total_rounds: data.total_rounds ?? 10 });
+      });
+      addEvt("track_complete", (data: any) => {
+        dispatch({ type: "track_complete", track: data.track, status: data.status });
+      });
+      addEvt("simulation_complete", (data: any) => {
+        dispatch({ type: "simulation_complete", sim_id: data.sim_id ?? simId });
+        closeConnection();
+      });
+      addEvt("cost_update", (data: any) => {
+        dispatch({ type: "cost_update", cost_usd: data.cost_usd, cap_usd: data.cap_usd });
+      });
 
       es.onerror = () => {
         if (reconnectAttempts.current < 3) {

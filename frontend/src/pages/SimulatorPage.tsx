@@ -35,12 +35,16 @@ export function SimulatorPage() {
           agent_count: 100,
         }),
       });
-      const data = await resp.json();
-      if (data.sim_id) {
-        startSimulation(data.sim_id);
+      if (!resp.ok) {
+        const detail = await resp.json().catch(() => ({ detail: {} }));
+        const msg = detail?.detail?.error ?? `Server error (${resp.status})`;
+        alert(msg);
+        return;
       }
+      const data = await resp.json();
+      startSimulation(data.sim_id);
     } catch {
-      // backend not available — use mock flow for dev
+      // Network error — backend not available, use mock for dev
       startSimulation("mock-001");
     }
   }, [scenarioText, geography, vertical, startSimulation]);
