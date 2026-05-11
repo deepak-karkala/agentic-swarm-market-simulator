@@ -14,9 +14,9 @@ const EXAMPLE_SCENARIOS = [
   "FDA approves Ozempic for over-the-counter use",
 ];
 
-export function SimulatorPage() {
+export function SimulatorPage({ initialScenario = "" }: { initialScenario?: string }) {
   const { state, dispatch, startSimulation } = useSimulation();
-  const [scenarioText, setScenarioText] = useState("");
+  const [scenarioText, setScenarioText] = useState(initialScenario);
   const [geography, setGeography] = useState("US");
   const [vertical, setVertical] = useState("auto");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);

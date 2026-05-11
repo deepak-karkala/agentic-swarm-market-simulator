@@ -5,12 +5,22 @@ import { SimulatorPage } from "./pages/SimulatorPage";
 import "./styles/globals.css";
 
 function App() {
-  const [tab, setTab] = useState<"home" | "simulate">("simulate");
+  const [tab, setTab] = useState<"home" | "simulate">("home");
+  const [scenarioPrefill, setScenarioPrefill] = useState("");
+
+  const handleScenarioSelect = (text: string) => {
+    setScenarioPrefill(text);
+    setTab("simulate");
+  };
 
   return (
     <div>
       <AppChrome activeTab={tab} onTabChange={setTab} />
-      {tab === "home" ? <HomePage /> : <SimulatorPage />}
+      {tab === "home" ? (
+        <HomePage onScenarioSelect={handleScenarioSelect} />
+      ) : (
+        <SimulatorPage initialScenario={scenarioPrefill} />
+      )}
     </div>
   );
 }
