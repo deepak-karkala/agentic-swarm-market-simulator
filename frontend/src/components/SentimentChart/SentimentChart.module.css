@@ -1,0 +1,7 @@
+.chart {
+  overflow: hidden;
+}
+
+.barGroup {
+  transition: opacity 0.3s;
+}
