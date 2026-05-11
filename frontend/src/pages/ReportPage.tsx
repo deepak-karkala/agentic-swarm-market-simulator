@@ -29,16 +29,18 @@ export function ReportPage({ simId, scenario, sections, horizon, calibration }: 
 
   const handleShare = useCallback(() => {
     const url = `${window.location.origin}/report/${simId}`;
+    const copied = () => {
+      setShared(true);
+      setTimeout(() => setShared(false), 1500);
+    };
     navigator.clipboard.writeText(url).then(
-      () => setShared(true),
+      copied,
       () => {
-        // Clipboard denied — show URL in a prompt as fallback
         window.prompt("Copy this URL:", url);
-        setShared(true);
+        copied();
       },
     );
-    if (shared) setTimeout(() => setShared(false), 1500);
-  }, [simId, shared]);
+  }, [simId]);
 
   const handlePdf = useCallback(() => {
     window.print();
