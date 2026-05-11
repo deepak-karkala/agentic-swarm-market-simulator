@@ -20,18 +20,25 @@ interface ReportProps {
   simId: string;
   scenario: string;
   sections: Record<string, string>;
+  horizon?: string;
+  calibration?: string;
 }
 
-export function ReportPage({ simId, scenario, sections }: ReportProps) {
-  const [activeSection, setActiveSection] = useState("executive_summary");
+export function ReportPage({ simId, scenario, sections, horizon, calibration }: ReportProps) {
   const [shared, setShared] = useState(false);
 
   const handleShare = useCallback(() => {
     const url = `${window.location.origin}/report/${simId}`;
-    navigator.clipboard.writeText(url).catch(() => {});
-    setShared(true);
-    setTimeout(() => setShared(false), 1500);
-  }, [simId]);
+    navigator.clipboard.writeText(url).then(
+      () => setShared(true),
+      () => {
+        // Clipboard denied — show URL in a prompt as fallback
+        window.prompt("Copy this URL:", url);
+        setShared(true);
+      },
+    );
+    if (shared) setTimeout(() => setShared(false), 1500);
+  }, [simId, shared]);
 
   const handlePdf = useCallback(() => {
     window.print();
@@ -42,9 +49,6 @@ export function ReportPage({ simId, scenario, sections }: ReportProps) {
       <div className={styles.page}>
         <div className={styles.emptyReport}>
           <span>{"//"} NO REPORT DATA</span>
-          <span style={{ fontSize: 10, color: "var(--dimmer)" }}>
-            Simulation has not produced a report yet.
-          </span>
         </div>
       </div>
     );
@@ -57,14 +61,13 @@ export function ReportPage({ simId, scenario, sections }: ReportProps) {
       <nav className={styles.toc}>
         <span className={styles.tocHeader}>CONTENTS</span>
         {SECTION_META.map((s) => (
-          <button
+          <a
             key={s.key}
-            type="button"
-            className={`${styles.tocItem} ${activeSection === s.key ? styles.tocItemActive : ""}`}
-            onClick={() => setActiveSection(s.key)}
+            className={styles.tocItem}
+            href={`#section-${s.key}`}
           >
             {s.num} {s.title}
-          </button>
+          </a>
         ))}
         <div className={styles.tocMeta}>
           <div>SIM: {simId}</div>
@@ -97,19 +100,19 @@ export function ReportPage({ simId, scenario, sections }: ReportProps) {
             <div className={styles.verdictNote}>Based on simulation data</div>
           </div>
           <div className={styles.verdictCard}>
-            <div className={styles.verdictValue}>6-18 MO</div>
+            <div className={styles.verdictValue}>{horizon || "--"}</div>
             <div className={styles.verdictLabel}>HORIZON</div>
-            <div className={styles.verdictNote}>Expected impact timeline</div>
+            <div className={styles.verdictNote}>{horizon ? "Expected impact timeline" : "Not available"}</div>
           </div>
           <div className={styles.verdictCard}>
-            <div className={styles.verdictValue}>--</div>
+            <div className={styles.verdictValue}>{calibration || "--"}</div>
             <div className={styles.verdictLabel}>CALIBRATION</div>
-            <div className={styles.verdictNote}>No prior sims for this scenario</div>
+            <div className={styles.verdictNote}>{calibration || "No prior sims"}</div>
           </div>
         </div>
 
-        {SECTION_META.filter((s) => s.key === activeSection).map((s) => (
-          <div key={s.key} className={styles.section}>
+        {SECTION_META.map((s) => (
+          <div key={s.key} id={`section-${s.key}`} className={styles.section}>
             <div className={styles.sectionLabel}>
               SECTION {s.num} / 10 {"\u00B7"} {s.title.toUpperCase()}
             </div>
