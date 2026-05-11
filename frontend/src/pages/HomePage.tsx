@@ -43,7 +43,7 @@ export function HomePage({ onScenarioSelect }: HomePageProps) {
       </section>
 
       {/* How it works */}
-      <section className={styles.section}>
+      <section className={styles.section} id="section-how">
         <div className={styles.sectionNum}>01</div>
         <div className={styles.sectionContent}>
           <h2 className={styles.sectionHeading}>How It Works</h2>
@@ -118,7 +118,7 @@ export function HomePage({ onScenarioSelect }: HomePageProps) {
       </section>
 
       {/* Calibration */}
-      <section className={styles.section}>
+      <section className={styles.section} id="section-calibration">
         <div className={styles.sectionNum}>04</div>
         <div className={styles.sectionContent}>
           <h2 className={styles.sectionHeading}>Gets Smarter With Use</h2>
@@ -145,12 +145,12 @@ export function HomePage({ onScenarioSelect }: HomePageProps) {
       </section>
 
       {/* Sample report excerpt */}
-      <section className={styles.section}>
+      <section className={styles.section} id="section-samples">
         <div className={styles.sectionNum}>05</div>
         <div className={styles.sectionContent}>
           <h2 className={styles.sectionHeading}>Sample Report Excerpt</h2>
           <div className={styles.reportPane}>
-            <div className={styles.reportVerdict}>BEARISH</div>
+            <div className={styles.reportVerdict}>BEARISH — 62% negative</div>
             <div className={styles.reportVerdictLabel}>VERDICT · 6-18 MONTH HORIZON</div>
             <div className={styles.reportSnippet}>
               Based on 200-agent simulation across 10 rounds, public sentiment showed
@@ -184,7 +184,7 @@ export function HomePage({ onScenarioSelect }: HomePageProps) {
       </section>
 
       {/* Bottom CTA */}
-      <section className={styles.ctaBottom}>
+      <section className={styles.ctaBottom} id="section-waitlist">
         <h2 className={styles.ctaHeadline}>Ready to run your first simulation?</h2>
         <div className={styles.emailRow}>
           <input
@@ -194,7 +194,9 @@ export function HomePage({ onScenarioSelect }: HomePageProps) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-          <Button variant="primary">JOIN WAITLIST</Button>
+          <Button variant="primary" onClick={() => { if (email) console.log("Waitlist:", email); }}>
+            JOIN WAITLIST
+          </Button>
         </div>
         <div className={styles.ctaMeta}>
           Typical run: 12 minutes · ~$4 per simulation · 10-section report
