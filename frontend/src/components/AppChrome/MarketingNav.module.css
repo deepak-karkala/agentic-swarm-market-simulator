@@ -1,0 +1,50 @@
+.chrome {
+  height: 44px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.logo {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 11px;
+  letter-spacing: .04em;
+}
+
+.links {
+  display: flex;
+  gap: 20px;
+  margin-left: auto;
+}
+
+.link {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  color: var(--dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.link:hover {
+  color: var(--ink);
+}
+
+.ctaPill {
+  margin-left: 16px;
+  padding: 4px 10px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  background: none;
+  cursor: pointer;
+}

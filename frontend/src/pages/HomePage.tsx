@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "../components/Button/Button";
 import styles from "./HomePage.module.css";
 
@@ -12,8 +13,14 @@ const SCENARIOS = [
 ];
 
 export function HomePage({ onScenarioSelect }: HomePageProps) {
+  const [email, setEmail] = useState("");
   const handleNavigate = () => onScenarioSelect?.("");
   const handleScenario = (text: string) => onScenarioSelect?.(text);
+
+  const swarmColors = ["#4ade80", "#f87171", "#94a3b8", "#ff8a00"];
+  const swarmDots = Array.from({ length: 120 }, (_, i) => ({
+    color: swarmColors[i % 4],
+  }));
 
   return (
     <div className={styles.page}>
@@ -61,9 +68,27 @@ export function HomePage({ onScenarioSelect }: HomePageProps) {
         </div>
       </section>
 
-      {/* 3-track architecture */}
+      {/* 200-agent swarm excerpt */}
       <section className={styles.section}>
         <div className={styles.sectionNum}>02</div>
+        <div className={styles.sectionContent}>
+          <h2 className={styles.sectionHeading}>The 200-Agent Swarm</h2>
+          <p className={styles.sectionText}>
+            200 culturally-calibrated AI agents with independent personas, KOL-tiered
+            influence weights, and geo-calibrated behavior — each one reacting to the
+            scenario and to each other across 10 simulation rounds.
+          </p>
+          <div className={styles.swarmGrid}>
+            {swarmDots.map((d, i) => (
+              <div key={i} className={styles.swarmDot} style={{ background: d.color }} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 3-track architecture */}
+      <section className={styles.section}>
+        <div className={styles.sectionNum}>03</div>
         <div className={styles.sectionContent}>
           <h2 className={styles.sectionHeading}>3-Track Parallel Simulation</h2>
           <div className={styles.tracks}>
@@ -94,7 +119,7 @@ export function HomePage({ onScenarioSelect }: HomePageProps) {
 
       {/* Calibration */}
       <section className={styles.section}>
-        <div className={styles.sectionNum}>03</div>
+        <div className={styles.sectionNum}>04</div>
         <div className={styles.sectionContent}>
           <h2 className={styles.sectionHeading}>Gets Smarter With Use</h2>
           <p className={styles.sectionText}>
@@ -119,9 +144,28 @@ export function HomePage({ onScenarioSelect }: HomePageProps) {
         </div>
       </section>
 
+      {/* Sample report excerpt */}
+      <section className={styles.section}>
+        <div className={styles.sectionNum}>05</div>
+        <div className={styles.sectionContent}>
+          <h2 className={styles.sectionHeading}>Sample Report Excerpt</h2>
+          <div className={styles.reportPane}>
+            <div className={styles.reportVerdict}>BEARISH</div>
+            <div className={styles.reportVerdictLabel}>VERDICT · 6-18 MONTH HORIZON</div>
+            <div className={styles.reportSnippet}>
+              Based on 200-agent simulation across 10 rounds, public sentiment showed
+              strong negative initial reaction (62% negative in Rounds 1-3) with gradual
+              normalization. Tesla identified as primary competitive responder (price cut
+              within 30 days, high confidence). Regulatory tailwinds from EV tax credits
+              partially offset market skepticism.
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Try scenarios */}
       <section className={styles.section}>
-        <div className={styles.sectionNum}>04</div>
+        <div className={styles.sectionNum}>06</div>
         <div className={styles.sectionContent}>
           <h2 className={styles.sectionHeading}>Try These Scenarios</h2>
           <div className={styles.tryScenarios}>
@@ -142,9 +186,16 @@ export function HomePage({ onScenarioSelect }: HomePageProps) {
       {/* Bottom CTA */}
       <section className={styles.ctaBottom}>
         <h2 className={styles.ctaHeadline}>Ready to run your first simulation?</h2>
-        <Button variant="primary" onClick={handleNavigate}>
-          {"\u25B6"} RUN YOUR SCENARIO
-        </Button>
+        <div className={styles.emailRow}>
+          <input
+            type="email"
+            className={styles.emailInput}
+            placeholder="you@company.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <Button variant="primary">JOIN WAITLIST</Button>
+        </div>
         <div className={styles.ctaMeta}>
           Typical run: 12 minutes · ~$4 per simulation · 10-section report
         </div>
