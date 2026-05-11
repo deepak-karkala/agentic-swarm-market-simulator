@@ -1,0 +1,40 @@
+.chrome {
+  height: 44px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 24px;
+}
+
+.logo {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 11px;
+  letter-spacing: .04em;
+}
+
+.tabs {
+  display: flex;
+  gap: 16px;
+  margin-left: auto;
+}
+
+.tab {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.tabActive {
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+}

@@ -1,0 +1,27 @@
+.pane {
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.header {
+  height: 26px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink2);
+}
+
+.value {
+  color: var(--accent);
+  margin-left: auto;
+}
+
+.body {
+  padding: 8px 10px;
+  font-size: 10px;
+}

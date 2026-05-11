@@ -1,7 +1,5 @@
-.scaffold {
-  padding: 40px;
-}
-
-.scaffold p {
-  color: var(--dim);
+.main {
+  padding: 24px;
+  max-width: 1680px;
+  margin: 0 auto;
 }

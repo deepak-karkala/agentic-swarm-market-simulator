@@ -1,0 +1,23 @@
+.chip {
+  padding: 2px 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  border: 1px solid var(--line2);
+  color: var(--ink2);
+  display: inline-block;
+}
+
+.accent {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.positive {
+  color: var(--pos);
+  border-color: var(--pos);
+}
+
+.negative {
+  color: var(--neg);
+  border-color: var(--neg);
+}

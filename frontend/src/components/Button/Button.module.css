@@ -1,0 +1,24 @@
+.btn {
+  padding: 7px 12px;
+  border: 1px solid var(--line2);
+  background: var(--panel2);
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+.btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
