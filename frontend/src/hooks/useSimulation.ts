@@ -110,38 +110,42 @@ export function useSimulation() {
       // Named SSE events — the backend emits `event: stage_start`,
       // `event: stage_complete`, etc. onmessage fires for default
       // unnamed events, but these are named.
-      const addEvt = (name: string, handler: (data: unknown) => void) => {
+      const addEvt = (name: string, handler: (data: Record<string, unknown>) => void) => {
         es.addEventListener(name, (e: Event) => {
           try {
             const msg = e as MessageEvent;
-            handler(JSON.parse(msg.data));
+            const parsed: unknown = JSON.parse(msg.data);
+            if (typeof parsed === "object" && parsed !== null) {
+              handler(parsed as Record<string, unknown>);
+            }
           } catch {
             // ignore unparseable
           }
         });
       };
 
-      addEvt("stage_start", (data: any) => {
-        dispatch({ type: "stage_start", stage: data.stage, message: data.message });
+      addEvt("stage_start", (data) => {
+        dispatch({ type: "stage_start", stage: String(data.stage ?? ""), message: String(data.message ?? "") });
       });
-      addEvt("stage_complete", (data: any) => {
-        dispatch({ type: "stage_complete", stage: data.stage, data });
+      addEvt("stage_complete", (data) => {
+        dispatch({ type: "stage_complete", stage: String(data.stage ?? ""), data });
       });
-      addEvt("track_start", (data: any) => {
-        dispatch({ type: "track_start", track: data.track, message: data.message });
+      addEvt("track_start", (data) => {
+        dispatch({ type: "track_start", track: Number(data.track ?? 0), message: String(data.message ?? "") });
       });
-      addEvt("round_complete", (data: any) => {
-        dispatch({ type: "round_complete", track: data.track, round: data.round, total_rounds: data.total_rounds ?? 10 });
+      addEvt("round_complete", (data) => {
+        dispatch({ type: "round_complete", track: Number(data.track ?? 0), round: Number(data.round ?? 0), total_rounds: Number(data.total_rounds ?? 10) });
       });
-      addEvt("track_complete", (data: any) => {
-        dispatch({ type: "track_complete", track: data.track, status: data.status });
+      addEvt("track_complete", (data) => {
+        dispatch({ type: "track_complete", track: Number(data.track ?? 0), status: String(data.status ?? "") });
       });
-      addEvt("simulation_complete", (data: any) => {
-        dispatch({ type: "simulation_complete", sim_id: data.sim_id ?? simId });
+      addEvt("simulation_complete", (data) => {
+        const simId = String(data.sim_id ?? simId);
+        dispatch({ type: "simulation_complete", sim_id: simId });
         closeConnection();
       });
-      addEvt("cost_update", (data: any) => {
-        dispatch({ type: "cost_update", cost_usd: data.cost_usd, cap_usd: data.cap_usd });
+      addEvt("cost_update", (data) => {
+        dispatch({ type: "cost_update", cost_usd: Number(data.cost_usd ?? 0), cap_usd: Number(data.cap_usd ?? 10) });
       });
 
       es.onerror = () => {

@@ -15,7 +15,7 @@ const EXAMPLE_SCENARIOS = [
 ];
 
 export function SimulatorPage() {
-  const { state, startSimulation } = useSimulation();
+  const { state, dispatch, startSimulation } = useSimulation();
   const [scenarioText, setScenarioText] = useState("");
   const [geography, setGeography] = useState("US");
   const [vertical, setVertical] = useState("auto");
@@ -37,8 +37,8 @@ export function SimulatorPage() {
       });
       if (!resp.ok) {
         const detail = await resp.json().catch(() => ({ detail: {} }));
-        const msg = detail?.detail?.error ?? `Server error (${resp.status})`;
-        alert(msg);
+        const msg: string = detail?.detail?.error ?? `Server error (${resp.status})`;
+        dispatch({ type: "simulation_error", message: msg });
         return;
       }
       const data = await resp.json();
