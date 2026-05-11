@@ -17,6 +17,26 @@ _FAKE_ANALYSIS = json.dumps({
     "caveats": ["Based on limited data"],
 })
 
+_MISSING_KEY_ANALYSIS = json.dumps({
+    "summary": "Some text.",
+    "confidence": "medium",
+    # key_findings and caveats missing
+})
+
+_BAD_CONFIDENCE_ANALYSIS = json.dumps({
+    "summary": "Text.",
+    "key_findings": ["F1"],
+    "confidence": "impossible",
+    "caveats": [],
+})
+
+_NON_LIST_FINDINGS = json.dumps({
+    "summary": "Text.",
+    "key_findings": "not a list",
+    "confidence": "medium",
+    "caveats": [],
+})
+
 
 def _make_seed() -> RealitySeed:
     seed = RealitySeed(geography="US", vertical="auto", scenario="Apple EV")
@@ -111,3 +131,31 @@ class TestRunExpertPanel:
         names = [e["event"] for e in events]
         assert "stage_start" in names
         assert "stage_complete" in names
+
+    @pytest.mark.asyncio
+    async def test_missing_keys_produces_placeholder(self, monkeypatch):
+        llm = MockLLMClient(default_response=_MISSING_KEY_ANALYSIS)
+        seed = _make_seed()
+        stats = _make_stats()
+
+        result = await run_expert_panel(seed, stats, llm)
+        assert result["competitive"].confidence == "low"
+        assert "unavailable" in result["competitive"].summary
+
+    @pytest.mark.asyncio
+    async def test_bad_confidence_produces_placeholder(self, monkeypatch):
+        llm = MockLLMClient(default_response=_BAD_CONFIDENCE_ANALYSIS)
+        seed = _make_seed()
+        stats = _make_stats()
+
+        result = await run_expert_panel(seed, stats, llm)
+        assert result["competitive"].confidence == "low"
+
+    @pytest.mark.asyncio
+    async def test_non_list_key_findings_produces_placeholder(self, monkeypatch):
+        llm = MockLLMClient(default_response=_NON_LIST_FINDINGS)
+        seed = _make_seed()
+        stats = _make_stats()
+
+        result = await run_expert_panel(seed, stats, llm)
+        assert result["competitive"].confidence == "low"

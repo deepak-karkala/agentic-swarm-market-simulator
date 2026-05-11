@@ -22,15 +22,14 @@ class ExpertAnalysis:
     caveats: list[str] = field(default_factory=list)
 
 
-_PLACEHOLDER = ExpertAnalysis()
+_ALLOWED_CONFIDENCES = {"high", "medium", "low"}
 
-EXPERTS = [
-    ("competitive", ModelTier.SONNET),
-    ("economic", ModelTier.SONNET),
-    ("consumer", ModelTier.SONNET),
-    ("domain", ModelTier.SONNET),
-    ("regulatory", ModelTier.SONNET),
-]
+EXPERTS = ["competitive", "economic", "consumer", "domain", "regulatory"]
+
+
+def _make_placeholder() -> ExpertAnalysis:
+    """Return a fresh placeholder (never share a mutable singleton)."""
+    return ExpertAnalysis()
 
 
 async def run_expert_panel(
@@ -61,18 +60,18 @@ async def run_expert_panel(
     }
 
     tasks = []
-    for name, _ in EXPERTS:
+    for name in EXPERTS:
         tasks.append(_run_expert(name, context, stats, llm, per_agent_timeout))
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     panel: dict[str, ExpertAnalysis] = {}
-    for (name, _), r in zip(EXPERTS, results):
+    for name, r in zip(EXPERTS, results):
         if isinstance(r, ExpertAnalysis):
             panel[name] = r
         else:
             logger.warning("Expert '%s' failed: %s", name, r)
-            panel[name] = _PLACEHOLDER
+            panel[name] = _make_placeholder()
 
     if sim_id:
         task_manager.emit_event(
@@ -101,10 +100,10 @@ async def _run_expert(
         )
     except asyncio.TimeoutError:
         logger.warning("Expert '%s' timed out after %.1fs", name, timeout)
-        return _PLACEHOLDER
+        return _make_placeholder()
     except Exception:
         logger.exception("Expert '%s' failed", name)
-        return _PLACEHOLDER
+        return _make_placeholder()
 
 
 async def _call_expert(
@@ -181,12 +180,34 @@ def _build_expert_prompt(name: str, context: dict, stats: SimulationStats | None
 def _parse_expert_output(raw: str) -> ExpertAnalysis:
     try:
         data = json.loads(raw)
+
+        # Require all expected keys
+        required = {"summary", "key_findings", "confidence", "caveats"}
+        missing = required - set(data)
+        if missing:
+            logger.warning("Expert output missing keys: %s", missing)
+            return _make_placeholder()
+
+        # Validate types
+        if not isinstance(data["summary"], str):
+            return _make_placeholder()
+        if not isinstance(data["key_findings"], list):
+            return _make_placeholder()
+        if not isinstance(data["caveats"], list):
+            return _make_placeholder()
+
+        # Validate confidence
+        confidence = data.get("confidence", "")
+        if confidence not in _ALLOWED_CONFIDENCES:
+            logger.warning("Expert output invalid confidence: %s", confidence)
+            return _make_placeholder()
+
         return ExpertAnalysis(
-            summary=data.get("summary", _PLACEHOLDER.summary),
-            key_findings=data.get("key_findings", []),
-            confidence=data.get("confidence", "medium"),
-            caveats=data.get("caveats", []),
+            summary=data["summary"],
+            key_findings=data["key_findings"],
+            confidence=confidence,
+            caveats=data["caveats"],
         )
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError, TypeError):
         logger.warning("Expert output parse failed")
-        return _PLACEHOLDER
+        return _make_placeholder()
