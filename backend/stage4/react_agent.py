@@ -1,5 +1,7 @@
 """Stage 4: ReACT Synthesizer — assembles simulation outputs into a 10-section report.
 
+Guarantees every section is present in the returned dict.
+Does NOT guarantee section-specific schema (that is a future enhancement).
 Follows report format spec: ideation/report_format_spec.md
 """
 
@@ -85,14 +87,25 @@ async def _generate_section(
 ) -> str:
     prompt = _build_section_prompt(key, name, seed, stats, track2, track3, experts)
 
-    raw = await llm.complete(prompt, tier=ModelTier.SONNET, max_tokens=4096)
-    if raw and raw.strip():
-        return raw.strip()
+    # First attempt
+    try:
+        raw = await llm.complete(prompt, tier=ModelTier.SONNET, max_tokens=4096)
+        if raw and raw.strip():
+            return raw.strip()
+    except Exception:
+        logger.exception("Section '%s' LLM call failed — retrying", name)
 
     # Retry with broader query
-    raw = await llm.complete(prompt + "\n\nProvide any available analysis.", tier=ModelTier.SONNET, max_tokens=4096)
-    if raw and raw.strip():
-        return raw.strip()
+    try:
+        raw = await llm.complete(
+            prompt + "\n\nProvide any available analysis for this section.",
+            tier=ModelTier.SONNET,
+            max_tokens=4096,
+        )
+        if raw and raw.strip():
+            return raw.strip()
+    except Exception:
+        logger.exception("Section '%s' retry also failed — using placeholder", name)
 
     return PLACEHOLDER
 

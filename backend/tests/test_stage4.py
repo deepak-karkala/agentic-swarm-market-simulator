@@ -135,4 +135,46 @@ class TestSynthesizeReport:
         assert "stage_start" in names
         assert "stage_complete" in names
         section_events = [e for e in events if e["event"] == "section_complete"]
-        assert len(section_events) >= 8
+        assert len(section_events) == 10
+
+    @pytest.mark.asyncio
+    async def test_llm_exception_produces_placeholder(self, monkeypatch):
+        """An LLM exception in one section doesn't crash the full report."""
+        async def raises_on_first(prompt, tier, **kwargs):
+            raise RuntimeError("LLM crash")
+
+        llm = MockLLMClient(default_response=_FAKE_REPORT_SECTION)
+        monkeypatch.setattr(llm, "complete", raises_on_first)
+
+        report = await synthesize_report(
+            _make_seed(), _make_stats(), _make_track2(), _make_track3(), _make_experts(), llm,
+        )
+
+        # All 10 sections present, those that failed get placeholder
+        for section in REQUIRED_SECTIONS:
+            assert section in report
+            assert len(report[section]) > 0
+
+    @pytest.mark.asyncio
+    async def test_first_call_empty_retry_succeeds(self, monkeypatch):
+        """First LLM call returns empty, retry returns content → section has content."""
+        call_count = 0
+
+        async def empty_then_ok(prompt, tier, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 10:  # first call per section returns empty
+                return ""
+            return _FAKE_REPORT_SECTION
+
+        llm = MockLLMClient(default_response=_FAKE_REPORT_SECTION)
+        monkeypatch.setattr(llm, "complete", empty_then_ok)
+
+        report = await synthesize_report(
+            _make_seed(), _make_stats(), _make_track2(), _make_track3(), _make_experts(), llm,
+        )
+
+        for section in REQUIRED_SECTIONS:
+            assert len(report[section]) > 0
+        # First call per section was empty → retry was called for each
+        assert call_count > 10
