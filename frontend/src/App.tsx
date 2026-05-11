@@ -8,6 +8,13 @@ function App() {
   const [tab, setTab] = useState<"home" | "simulate">("home");
   const [scenarioPrefill, setScenarioPrefill] = useState("");
 
+  const handleTabChange = (newTab: "home" | "simulate") => {
+    setTab(newTab);
+    if (newTab === "simulate") {
+      setScenarioPrefill(""); // clear prefill on plain tab switch
+    }
+  };
+
   const handleScenarioSelect = (text: string) => {
     setScenarioPrefill(text);
     setTab("simulate");
@@ -15,7 +22,7 @@ function App() {
 
   return (
     <div>
-      <AppChrome activeTab={tab} onTabChange={setTab} />
+      <AppChrome activeTab={tab} onTabChange={handleTabChange} />
       {tab === "home" ? (
         <HomePage onScenarioSelect={handleScenarioSelect} />
       ) : (

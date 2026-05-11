@@ -218,3 +218,41 @@
   color: var(--dim);
   margin-top: 12px;
 }
+
+/* ── Mobile (max-width: 768px) ── */
+
+@media (max-width: 768px) {
+  .page {
+    padding: 0 16px;
+  }
+
+  .hero {
+    padding: 40px 0 32px;
+  }
+
+  .headline {
+    font-size: 22px;
+  }
+
+  .section {
+    flex-direction: column;
+    gap: 12px;
+    padding: 32px 0;
+  }
+
+  .sectionNum {
+    min-width: auto;
+  }
+
+  .pipeline {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .tracks {
+    grid-template-columns: 1fr;
+  }
+
+  .bigNum {
+    font-size: 18px;
+  }
+}
