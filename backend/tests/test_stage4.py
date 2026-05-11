@@ -132,6 +132,13 @@ _EXPERT_PERSONA = (
     "the market will be disrupted. Based on 200 agents across Round 4."
 )
 _PLACEHOLDER_SECTION = "[Section]: Insufficient simulation data — consider increasing agent count."
+_DOLLAR_CLAIM = "The investment required is $50M for the first phase."
+_STOCK_DIRECTION = "The stock will decline sharply after the announcement."
+_MIXED_SOURCED_AND_UNSOURCED = (
+    "Revenue will grow 25% next year (Round 3, 150 agents). "
+    + ("More analysis continues here with additional context " * 8)
+    + "Costs will rise 10% without any clear data source."
+)
 
 
 class TestQualityEval:
@@ -164,4 +171,34 @@ class TestQualityEval:
     def test_empty_experts_handled(self):
         report = {"competitive_landscape": _EXPERT_PERSONA}
         result = evaluate_quality(report, experts={})
+        assert "QUALITY FLAG" in result["competitive_landscape"]
+
+    def test_dollar_claim_flagged(self):
+        report = {"executive_summary": _DOLLAR_CLAIM}
+        result = evaluate_quality(report, experts=None)
+        assert "QUALITY FLAG" in result["executive_summary"]
+
+    def test_stock_direction_flagged(self):
+        report = {"financial_impact": _STOCK_DIRECTION}
+        result = evaluate_quality(report, experts=None)
+        assert "QUALITY FLAG" in result["financial_impact"]
+
+    def test_sourced_number_next_to_unsourced_is_flagged(self):
+        """One cited number doesn't source all numbers in the section."""
+        report = {"executive_summary": _MIXED_SOURCED_AND_UNSOURCED}
+        result = evaluate_quality(report, experts=None)
+        assert "QUALITY FLAG" in result["executive_summary"]
+
+    def test_wrong_expert_key_still_flags(self):
+        """Regulatory expert present but competitive persona referenced → flagged."""
+        experts = {"regulatory": ExpertAnalysis(summary="OK.", key_findings=["F1"], confidence="high")}
+        report = {"competitive_landscape": _EXPERT_PERSONA}
+        result = evaluate_quality(report, experts=experts)
+        assert "QUALITY FLAG" in result["competitive_landscape"]
+
+    def test_low_confidence_expert_flagged(self):
+        """Expert exists but confidence='low' → still flagged."""
+        experts = {"competitive": ExpertAnalysis(summary="Weak.", key_findings=[], confidence="low")}
+        report = {"competitive_landscape": _EXPERT_PERSONA}
+        result = evaluate_quality(report, experts=experts)
         assert "QUALITY FLAG" in result["competitive_landscape"]
