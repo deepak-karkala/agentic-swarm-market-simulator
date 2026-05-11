@@ -13,15 +13,24 @@ interface SentimentChartProps {
   height?: number;
 }
 
-export function SentimentChart({ data, width = 400, height = 160 }: SentimentChartProps) {
-  const barWidth = Math.max(8, Math.min(24, (width - 40) / Math.max(data.length, 1) - 4));
+const MARGIN = 20;
+const MAX_BAR_WIDTH = 24;
 
+export function SentimentChart({ data, width = 400, height = 160 }: SentimentChartProps) {
   const readVar = (name: string): string =>
     getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
   const posColor = readVar("--pos") || "#4ade80";
   const negColor = readVar("--neg") || "#f87171";
   const neuColor = readVar("--ink2") || "#9a9a9a";
+
+  // Auto-scale barWidth so all rounds fit within the available width
+  const chartW = width - MARGIN * 2;
+  const count = Math.max(data.length, 1);
+  const gap = 4;
+  const barWidth = Math.min(MAX_BAR_WIDTH, Math.max(4, (chartW - gap * (count - 1)) / count));
+  const totalBarsW = count * barWidth + (count - 1) * gap;
+  const offsetX = MARGIN + (chartW - totalBarsW) / 2;
 
   return (
     <svg
@@ -36,7 +45,7 @@ export function SentimentChart({ data, width = 400, height = 160 }: SentimentCha
       </text>
 
       {data.map((d, i) => {
-        const x = 20 + i * (barWidth + 4);
+        const x = offsetX + i * (barWidth + gap);
         const scale = (height - 30) / 100;
         const posH = d.positive_pct * scale;
         const negH = d.negative_pct * scale;
@@ -52,7 +61,7 @@ export function SentimentChart({ data, width = 400, height = 160 }: SentimentCha
               x={x + barWidth / 2}
               y={height - 2}
               fill={readVar("--dim")}
-              fontSize="7"
+              fontSize={count > 15 ? "6" : "7"}
               fontFamily="JetBrains Mono"
               textAnchor="middle"
             >

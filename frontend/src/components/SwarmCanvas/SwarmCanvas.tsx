@@ -25,6 +25,7 @@ const DOT_RADIUS = 2.5;
 
 export function SwarmCanvas({ agents, round }: SwarmCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<number>(0);
   const positionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
@@ -39,17 +40,13 @@ export function SwarmCanvas({ agents, round }: SwarmCanvasProps) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Initialize positions for new agents
     const existing = positionsRef.current;
     for (const a of agents) {
       if (!existing.has(a.id)) {
-        existing.set(a.id, {
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
-        });
+        // Use caller-provided coordinates; scale to canvas if needed
+        existing.set(a.id, { x: a.x * canvas.width, y: a.y * canvas.height });
       }
     }
-    // Remove positions for agents that no longer exist
     for (const key of existing.keys()) {
       if (!agents.find((a) => a.id === key)) {
         existing.delete(key);
@@ -65,7 +62,7 @@ export function SwarmCanvas({ agents, round }: SwarmCanvasProps) {
         const pos = existing.get(agent.id);
         if (!pos) continue;
 
-        // Gentle random walk
+        // Gentle random walk delta from the stored position
         pos.x += (Math.random() - 0.5) * 2;
         pos.y += (Math.random() - 0.5) * 2;
         pos.x = Math.max(0, Math.min(w, pos.x));
@@ -87,26 +84,31 @@ export function SwarmCanvas({ agents, round }: SwarmCanvasProps) {
     return () => cancelAnimationFrame(frameRef.current);
   }, [agents, readColor]);
 
-  // Resize canvas to fill container
+  // ResizeObserver on container for layout-driven resizes (e.g. sidebar collapse)
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+
     const resize = () => {
-      const parent = canvas.parentElement;
-      if (!parent) return;
-      canvas.width = parent.clientWidth;
-      canvas.height = parent.clientHeight;
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
     };
     resize();
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
+
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    return () => observer.disconnect();
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className={styles.canvas}
-      aria-label={`Simulation swarm canvas — ${agents.length} agents, round ${round ?? 0}`}
-    />
+    <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
+      <canvas
+        ref={canvasRef}
+        className={styles.canvas}
+        aria-label={`Simulation swarm canvas — ${agents.length} agents, round ${round ?? 0}`}
+      />
+    </div>
   );
 }
