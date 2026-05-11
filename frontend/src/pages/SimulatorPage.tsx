@@ -47,7 +47,7 @@ export function SimulatorPage() {
       // Network error — backend not available, use mock for dev
       startSimulation("mock-001");
     }
-  }, [scenarioText, geography, vertical, startSimulation]);
+  }, [scenarioText, geography, vertical, startSimulation, dispatch]);
 
   const stageList: { stage: string; label: string }[] = [
     { stage: "stage0", label: "0\u00B7Seed \u2014 Reality Seeding" },

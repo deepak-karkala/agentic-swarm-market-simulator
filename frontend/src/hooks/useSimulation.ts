@@ -140,8 +140,8 @@ export function useSimulation() {
         dispatch({ type: "track_complete", track: Number(data.track ?? 0), status: String(data.status ?? "") });
       });
       addEvt("simulation_complete", (data) => {
-        const simId = String(data.sim_id ?? simId);
-        dispatch({ type: "simulation_complete", sim_id: simId });
+        const completedSimId = String(data.sim_id ?? simId);
+        dispatch({ type: "simulation_complete", sim_id: completedSimId });
         closeConnection();
       });
       addEvt("cost_update", (data) => {
