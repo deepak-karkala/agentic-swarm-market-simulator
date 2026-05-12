@@ -51,11 +51,23 @@ export function SimulatorPage({ initialScenario = "", simId }: { initialScenario
 
   const [recentRuns, setRecentRuns] = useState<Array<{ sim_id: string; scenario: string; status: string }>>([]);
 
-  // Connect to existing SSE stream if simId is provided (resume/check route)
+  // Connect to existing SSE stream if simId is provided, and check for existing report
   useEffect(() => {
-    if (simId && state.status === "INPUT") {
-      startSimulation(simId);
-    }
+    if (!simId || state.status !== "INPUT") return;
+    // Check if report already exists
+    fetch(`/simulate/${simId}/report`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.sections) {
+          // Report already complete — transition to REPORT state
+          dispatch({ type: "sim_id_set", simId });
+          dispatch({ type: "simulation_complete", sim_id: simId });
+        } else {
+          // Still in progress — open SSE stream
+          startSimulation(simId);
+        }
+      })
+      .catch(() => startSimulation(simId)); // fallback to SSE
   }, [simId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

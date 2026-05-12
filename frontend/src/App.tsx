@@ -42,20 +42,33 @@ function ReportShell() {
   const { id } = useParams<{ id: string }>();
   const [sections, setSections] = useState<Record<string, string> | null>(null);
   const [scenario, setScenario] = useState("");
+  const [status, setStatus] = useState<"loading" | "in_progress" | "ready" | "error">("loading");
 
   useEffect(() => {
     if (!id) return;
     fetch(`/report/${id}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.sections) setSections(data.sections);
-        if (data.scenario) setScenario(data.scenario);
+      .then((r) => {
+        if (r.status === 202) {
+          setStatus("in_progress");
+          return null;
+        }
+        return r.json();
       })
-      .catch(() => setSections(null));
+      .then((data) => {
+        if (!data) return;
+        if (data.sections) {
+          setSections(data.sections);
+          setScenario(data.scenario ?? "");
+          setStatus("ready");
+        }
+      })
+      .catch(() => setStatus("error"));
   }, [id]);
 
   if (!id) return <div style={{ padding: 40, color: "var(--dim)" }}>No report ID specified.</div>;
-  if (sections === null) return <div style={{ padding: 40, color: "var(--dim)" }}>Loading report...</div>;
+  if (status === "loading") return <div style={{ padding: 40, color: "var(--dim)" }}>Loading report...</div>;
+  if (status === "in_progress") return <div style={{ padding: 40, color: "var(--accent)" }}>Report generation in progress — check back soon.</div>;
+  if (status === "error" || !sections) return <div style={{ padding: 40, color: "var(--dim)" }}>Report not available.</div>;
 
   return <ReportPage simId={id} scenario={scenario || "Simulation"} sections={sections} />;
 }
