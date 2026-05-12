@@ -48,6 +48,10 @@ function ReportShell() {
     if (!id) return;
     fetch(`/report/${id}`)
       .then((r) => {
+        if (!r.ok) {
+          setStatus("error");
+          return null;
+        }
         if (r.status === 202) {
           setStatus("in_progress");
           return null;
@@ -55,11 +59,13 @@ function ReportShell() {
         return r.json();
       })
       .then((data) => {
-        if (!data) return;
-        if (data.sections) {
+        if (data?.sections) {
           setSections(data.sections);
           setScenario(data.scenario ?? "");
           setStatus("ready");
+        } else if (data !== null) {
+          // 200 but no sections
+          setStatus("error");
         }
       })
       .catch(() => setStatus("error"));

@@ -21,6 +21,7 @@ export interface SimulationState {
   currentStage: string;
   errorMessage: string;
   agents: number;
+  reportSections: Record<string, string> | null;
 }
 
 export type SimAction =
@@ -33,6 +34,7 @@ export type SimAction =
   | { type: "simulation_complete"; sim_id: string }
   | { type: "simulation_error"; message: string }
   | { type: "cost_update"; cost_usd: number; cap_usd: number }
+  | { type: "report_loaded"; sections: Record<string, string> }
   | { type: "reset" };
 
 const STAGE_TRANSITIONS: Record<string, SimStatus> = {
@@ -52,6 +54,7 @@ function makeInitialState(): SimulationState {
     currentStage: "",
     errorMessage: "",
     agents: 0,
+    reportSections: null,
   };
 }
 
@@ -74,6 +77,8 @@ function simulationReducer(state: SimulationState, action: SimAction): Simulatio
       return { ...state, round: action.round, totalRounds: action.total_rounds };
     case "simulation_complete":
       return { ...state, status: "REPORT", simId: action.sim_id };
+    case "report_loaded":
+      return { ...state, reportSections: action.sections };
     case "simulation_error":
       return { ...state, status: "ERROR", errorMessage: action.message };
     case "cost_update":

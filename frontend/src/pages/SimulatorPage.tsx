@@ -3,6 +3,7 @@ import { useSimulation, type SimStatus } from "../hooks/useSimulation";
 import { Pane } from "../components/Pane/Pane";
 import { Button } from "../components/Button/Button";
 import { Chip } from "../components/Chip/Chip";
+import { ReportPage } from "./ReportPage";
 import { LiveDot } from "../components/LiveDot/LiveDot";
 import { ProgressBar } from "../components/ProgressBar/ProgressBar";
 import { StageRow } from "../components/StageRow/StageRow";
@@ -59,11 +60,10 @@ export function SimulatorPage({ initialScenario = "", simId }: { initialScenario
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.sections) {
-          // Report already complete — transition to REPORT state
           dispatch({ type: "sim_id_set", simId });
+          dispatch({ type: "report_loaded", sections: data.sections });
           dispatch({ type: "simulation_complete", sim_id: simId });
         } else {
-          // Still in progress — open SSE stream
           startSimulation(simId);
         }
       })
@@ -250,11 +250,15 @@ export function SimulatorPage({ initialScenario = "", simId }: { initialScenario
           )}
 
           {state.status === "REPORT" && (
-            <Pane header="REPORT" value="COMPLETE">
-              <div className={styles.reportPlaceholder}>
-                <span>Report generated successfully. View sections below.</span>
-              </div>
-            </Pane>
+            state.reportSections ? (
+              <ReportPage simId={state.simId ?? "unknown"} scenario={scenarioText} sections={state.reportSections} />
+            ) : (
+              <Pane header="REPORT" value="COMPLETE">
+                <div className={styles.reportPlaceholder}>
+                  <span>Report generated successfully. View report at <a href={`/report/${state.simId}`} style={{ color: "var(--accent)" }}>/report/{state.simId}</a></span>
+                </div>
+              </Pane>
+            )
           )}
 
           {state.status === "ERROR" && (
