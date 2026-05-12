@@ -64,15 +64,21 @@ class TaskManager:
         return sim_id
 
     def emit_event(self, sim_id: str, event: str, data: dict[str, Any]) -> None:
+        """Push an SSE event thread-safely onto the queue.
+
+        Uses the event loop captured during init_sim() (the FastAPI asyncio loop).
+        call_soon_threadsafe bridges from the background pipeline thread into
+        the asyncio event loop that owns the queue.
+        """
         queue = self._events.get(sim_id)
         if queue is None:
             logger.warning("emit_event for unknown sim_id: %s", sim_id)
             return
         payload = {"event": event, "data": data}
-        try:
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(queue.put_nowait, payload)
+        else:
             queue.put_nowait(payload)
-        except Exception:
-            logger.exception("Failed to emit event '%s' for sim_id=%s", event, sim_id)
 
     def get_queue(self, sim_id: str) -> asyncio.Queue | None:
         return self._events.get(sim_id)
@@ -87,6 +93,11 @@ class TaskManager:
 
     def get_report(self, sim_id: str) -> dict[str, str] | None:
         return self._reports.get(sim_id)
+
+    def clear_sim(self, sim_id: str) -> None:
+        """Remove events and report for a completed simulation."""
+        self._events.pop(sim_id, None)
+        self._reports.pop(sim_id, None)
 
 
 task_manager = TaskManager()

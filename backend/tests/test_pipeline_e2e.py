@@ -139,6 +139,10 @@ class TestPipelineEndToEnd:
         t.start()
         t.join(timeout=10)
 
+        # Yield to event loop so call_soon_threadsafe callbacks execute
+        import asyncio
+        await asyncio.sleep(0)
+
         queue = task_manager.get_queue(sim_id)
         events = []
         while not queue.empty():
@@ -198,3 +202,35 @@ class TestPipelineEndToEnd:
         stored = task_manager.get_report(sim_id)
         assert stored is not None
         assert stored["executive_summary"] == "Final report content"
+
+    @pytest.mark.asyncio
+    async def test_simulation_error_terminates_stream(self, monkeypatch):
+        """SSE stream ends with simulation_error as the terminal event."""
+        async def failing_seeder(*a, **kw):
+            raise RuntimeError("Crash")
+
+        monkeypatch.setattr("backend.stage0.seeder.run_seeder", failing_seeder)
+
+        from backend.pipeline.orchestrator import run_pipeline_background
+
+        req = SimulateRequest(scenario_text="T", geography="US", vertical="auto")
+        task_manager.reset()
+        sim_id = task_manager.init_sim()
+
+        import threading
+        t = threading.Thread(target=run_pipeline_background, args=(sim_id, req, MockLLMClient()))
+        t.start()
+        t.join(timeout=10)
+
+        # Yield to event loop so call_soon_threadsafe callbacks execute
+        import asyncio
+        await asyncio.sleep(0)
+
+        queue = task_manager.get_queue(sim_id)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        # Last event must be simulation_error (terminal event)
+        assert len(events) >= 1
+        assert events[-1]["event"] == "simulation_error"
