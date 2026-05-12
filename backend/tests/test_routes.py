@@ -118,6 +118,29 @@ class TestPublicReport:
         assert response.status_code == 404
 
 
+class TestRecentRuns:
+    @pytest.mark.asyncio
+    async def test_get_simulations_returns_list(self, client):
+        response = await client.get("/simulations")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+
+    def test_add_recent_trims_to_max_five(self):
+        """add_recent keeps only the 5 most recent entries."""
+        from backend.pipeline.task_manager import task_manager
+
+        task_manager.reset()
+        for i in range(7):
+            task_manager.add_recent(f"sim_{i}", f"Scenario {i}", "completed")
+
+        recent = task_manager.get_recent()
+        assert len(recent) == 5
+        # Most recent first
+        assert recent[0]["sim_id"] == "sim_6"
+        assert recent[4]["sim_id"] == "sim_2"
+
+
 class TestInjectionSanitizer:
     def test_human_role_switch_stripped(self):
         from backend.api.schemas import sanitize_scenario_text

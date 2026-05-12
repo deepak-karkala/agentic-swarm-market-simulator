@@ -174,10 +174,7 @@ export function SimulatorPage({ initialScenario = "" }: { initialScenario?: stri
                   key={run.sim_id}
                   type="button"
                   className={styles.recentRow}
-                  onClick={() => {
-                    setScenarioText(run.scenario);
-                    startSimulation(run.sim_id);
-                  }}
+                  onClick={() => setScenarioText(run.scenario)}
                 >
                   SIM #{run.sim_id} &middot; {run.scenario.slice(0, 40)}
                 </button>
