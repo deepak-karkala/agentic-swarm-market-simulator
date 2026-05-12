@@ -12,7 +12,13 @@ logger = logging.getLogger(__name__)
 
 
 class TaskManager:
-    """Manages simulation lifecycle: concurrency guard, SSE emission, and report persistence."""
+    """Manages simulation lifecycle: concurrency guard, SSE emission, and report persistence.
+
+    Phase 1 retention: events and reports are kept in-memory until explicit
+    clear_sim(). For the single-user Phase 1 deployment, retention across the
+    session is acceptable. Phase 2 should add time-based or request-count-based
+    eviction.
+    """
 
     def __init__(self):
         self._running: bool = False

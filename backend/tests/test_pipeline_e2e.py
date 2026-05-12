@@ -236,8 +236,8 @@ class TestPipelineEndToEnd:
         assert events[-1]["event"] == "simulation_error"
 
     @pytest.mark.asyncio
-    async def test_report_retrieval_clears_sim_memory(self, monkeypatch):
-        """After get_report returns a report, the sim is cleared from memory."""
+    async def test_report_retrievable_multiple_times(self, monkeypatch):
+        """Report persists across multiple GETs — no single-use clearing."""
         async def mock_seeder(*a, **kw):
             from backend.stage0.seeder import RealitySeed
             return RealitySeed(geography="US", vertical="auto", scenario="T")
@@ -284,13 +284,14 @@ class TestPipelineEndToEnd:
         import asyncio
         await asyncio.sleep(0)
 
-        # Sim has report and events before retrieval
         assert task_manager.has_sim(sim_id)
-        assert task_manager.get_report(sim_id) is not None
 
-        # Simulate GET /simulate/{sim_id}/report — routes call clear_sim after retrieval
-        task_manager.clear_sim(sim_id)
+        # First retrieval works
+        r1 = task_manager.get_report(sim_id)
+        assert r1 is not None
+        assert task_manager.has_sim(sim_id)  # still present
 
-        # After clear, sim is gone
-        assert not task_manager.has_sim(sim_id)
-        assert task_manager.get_report(sim_id) is None
+        # Second retrieval also works (no single-use clearing)
+        r2 = task_manager.get_report(sim_id)
+        assert r2 is not None
+        assert r2["executive_summary"] == r1["executive_summary"]

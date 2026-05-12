@@ -72,7 +72,6 @@ async def simulate_report(sim_id: str):
         raise HTTPException(status_code=404, detail="Simulation not found")
     report = task_manager.get_report(sim_id)
     if report:
-        task_manager.clear_sim(sim_id)  # reclaim memory after retrieval
         return JSONResponse(content={"sim_id": sim_id, "status": "complete", "sections": report})
     return JSONResponse(
         content=ReportResponse(sim_id=sim_id, status="in_progress", current_stage="unknown").model_dump(),
@@ -86,7 +85,6 @@ async def public_report(sim_id: str):
         raise HTTPException(status_code=404, detail="Report not found")
     report = task_manager.get_report(sim_id)
     if report:
-        task_manager.clear_sim(sim_id)  # reclaim memory after retrieval
         return JSONResponse(content={"sim_id": sim_id, "status": "complete", "sections": report})
     return JSONResponse(
         content=ReportResponse(sim_id=sim_id, status="in_progress", current_stage="unknown").model_dump(),
