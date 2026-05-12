@@ -3,8 +3,9 @@
 import asyncio
 import json
 import logging
+import os
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from backend.api.schemas import ReportResponse, SimulateRequest, SimulateResponse
@@ -15,7 +16,7 @@ router = APIRouter()
 
 
 @router.post("/simulate", response_model=SimulateResponse)
-async def simulate(request: SimulateRequest):
+async def simulate(request: SimulateRequest, background_tasks: BackgroundTasks):
     if not task_manager.acquire():
         current = task_manager.current_sim_id or "unknown"
         raise HTTPException(
@@ -24,11 +25,14 @@ async def simulate(request: SimulateRequest):
         )
 
     sim_id = task_manager.init_sim()
-    task_manager.emit_event(sim_id, "stage_start", {"stage": "stage0", "message": "Gathering market intelligence..."})
 
-    # TODO (Task 6.1): The pipeline thread must call task_manager.release()
-    # in BOTH the success and error paths of the background task. If
-    # release() is missed, the 409 guard becomes permanent after one sim.
+    # Build an LLMClient from env vars and kick off the pipeline
+    api_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "no-key")
+    from backend.llm.client import LLMClient
+    llm = LLMClient(api_key=api_key)
+
+    from backend.pipeline.orchestrator import run_pipeline_background
+    background_tasks.add_task(run_pipeline_background, sim_id, request, llm)
 
     return SimulateResponse(sim_id=sim_id, status="queued")
 
