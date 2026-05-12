@@ -51,7 +51,7 @@ async def simulate_status(sim_id: str, request: Request):
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=15.0)
                 yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
-                if event["event"] == "simulation_complete":
+                if event["event"] in ("simulation_complete", "simulation_error"):
                     break
             except asyncio.TimeoutError:
                 yield ": heartbeat\n\n"
@@ -70,8 +70,11 @@ async def simulate_status(sim_id: str, request: Request):
 async def simulate_report(sim_id: str):
     if not task_manager.has_sim(sim_id):
         raise HTTPException(status_code=404, detail="Simulation not found")
+    report = task_manager.get_report(sim_id)
+    if report:
+        return JSONResponse(content={"sim_id": sim_id, "status": "complete", "sections": report})
     return JSONResponse(
-        content=ReportResponse(sim_id=sim_id, status="in_progress", current_stage="stage0").model_dump(),
+        content=ReportResponse(sim_id=sim_id, status="in_progress", current_stage="unknown").model_dump(),
         status_code=202,
     )
 
@@ -80,7 +83,10 @@ async def simulate_report(sim_id: str):
 async def public_report(sim_id: str):
     if not task_manager.has_sim(sim_id):
         raise HTTPException(status_code=404, detail="Report not found")
+    report = task_manager.get_report(sim_id)
+    if report:
+        return JSONResponse(content={"sim_id": sim_id, "status": "complete", "sections": report})
     return JSONResponse(
-        content=ReportResponse(sim_id=sim_id, status="in_progress", current_stage="stage0").model_dump(),
+        content=ReportResponse(sim_id=sim_id, status="in_progress", current_stage="unknown").model_dump(),
         status_code=202,
     )

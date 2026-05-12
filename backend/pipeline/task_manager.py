@@ -1,4 +1,4 @@
-"""Background task orchestration with concurrency guard and SSE event queue."""
+"""Background task orchestration with concurrency guard, SSE event queue, and report storage."""
 
 from __future__ import annotations
 
@@ -12,23 +12,14 @@ logger = logging.getLogger(__name__)
 
 
 class TaskManager:
-    """Manages simulation lifecycle: concurrency guard and SSE event emission.
-
-    threading.Lock protects _running and _current_sim_id (accessed from both
-    async event loop and background pipeline thread).  asyncio.Queue is only
-    safe within the event loop that created it — emit_event bridges the
-    background thread via loop.call_soon_threadsafe().
-
-    Background pipeline (Task 6.1) runs in a thread spawned by FastAPI's
-    BackgroundTasks.  That thread calls emit_event, which must push events
-    into the SSE queue safely across the thread boundary.
-    """
+    """Manages simulation lifecycle: concurrency guard, SSE emission, and report persistence."""
 
     def __init__(self):
         self._running: bool = False
         self._current_sim_id: str | None = None
         self._lock = threading.Lock()
         self._events: dict[str, asyncio.Queue[dict[str, Any]]] = {}
+        self._reports: dict[str, dict[str, str]] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
 
     # -- concurrency guard --
@@ -44,7 +35,6 @@ class TaskManager:
             return self._current_sim_id
 
     def acquire(self) -> bool:
-        """Try to acquire the simulation lock. Returns False if already running."""
         with self._lock:
             if self._running:
                 return False
@@ -57,16 +47,15 @@ class TaskManager:
             self._current_sim_id = None
 
     def reset(self) -> None:
-        """Reset all state (for tests)."""
         with self._lock:
             self._running = False
             self._current_sim_id = None
             self._events.clear()
+            self._reports.clear()
 
     # -- event emission --
 
     def init_sim(self) -> str:
-        """Create a new simulation slot and return its ID."""
         sim_id = uuid.uuid4().hex[:12]
         self._loop = asyncio.get_running_loop()
         with self._lock:
@@ -75,28 +64,29 @@ class TaskManager:
         return sim_id
 
     def emit_event(self, sim_id: str, event: str, data: dict[str, Any]) -> None:
-        """Push an SSE event thread-safely onto the queue for the given simulation.
-
-        Safe to call from any thread. When called from the background
-        pipeline thread, bridges into the event loop via
-        loop.call_soon_threadsafe().
-        """
         queue = self._events.get(sim_id)
         if queue is None:
             logger.warning("emit_event for unknown sim_id: %s", sim_id)
             return
         payload = {"event": event, "data": data}
-        loop = self._loop
-        if loop is not None and loop is not asyncio.get_event_loop():
-            loop.call_soon_threadsafe(queue.put_nowait, payload)
-        else:
+        try:
             queue.put_nowait(payload)
+        except Exception:
+            logger.exception("Failed to emit event '%s' for sim_id=%s", event, sim_id)
 
     def get_queue(self, sim_id: str) -> asyncio.Queue | None:
         return self._events.get(sim_id)
 
     def has_sim(self, sim_id: str) -> bool:
         return sim_id in self._events
+
+    # -- report persistence --
+
+    def set_report(self, sim_id: str, report: dict[str, str]) -> None:
+        self._reports[sim_id] = report
+
+    def get_report(self, sim_id: str) -> dict[str, str] | None:
+        return self._reports.get(sim_id)
 
 
 task_manager = TaskManager()
