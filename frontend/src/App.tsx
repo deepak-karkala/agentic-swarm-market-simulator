@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, useNavigate, useParams } from "react-router-dom";
 import { AppChrome } from "./components/AppChrome/AppChrome";
 import { MarketingNav } from "./components/AppChrome/MarketingNav";
@@ -39,9 +40,24 @@ function SimulatorShell() {
 
 function ReportShell() {
   const { id } = useParams<{ id: string }>();
-  if (!id) return <div style={{ padding: 40, color: "var(--dim)" }}>No report ID specified.</div>;
+  const [sections, setSections] = useState<Record<string, string> | null>(null);
+  const [scenario, setScenario] = useState("");
 
-  return <ReportPage simId={id} scenario="Simulation" sections={{}} />;
+  useEffect(() => {
+    if (!id) return;
+    fetch(`/report/${id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.sections) setSections(data.sections);
+        if (data.scenario) setScenario(data.scenario);
+      })
+      .catch(() => setSections(null));
+  }, [id]);
+
+  if (!id) return <div style={{ padding: 40, color: "var(--dim)" }}>No report ID specified.</div>;
+  if (sections === null) return <div style={{ padding: 40, color: "var(--dim)" }}>Loading report...</div>;
+
+  return <ReportPage simId={id} scenario={scenario || "Simulation"} sections={sections} />;
 }
 
 function App() {

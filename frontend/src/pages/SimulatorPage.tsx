@@ -14,7 +14,7 @@ const EXAMPLE_SCENARIOS = [
   "FDA approves Ozempic for over-the-counter use",
 ];
 
-export function SimulatorPage({ initialScenario = "", simId: _simId }: { initialScenario?: string; simId?: string }) {
+export function SimulatorPage({ initialScenario = "", simId }: { initialScenario?: string; simId?: string }) {
   const { state, dispatch, startSimulation } = useSimulation();
   const [scenarioText, setScenarioText] = useState(initialScenario);
   const [geography, setGeography] = useState("US");
@@ -50,6 +50,13 @@ export function SimulatorPage({ initialScenario = "", simId: _simId }: { initial
   }, [scenarioText, geography, vertical, startSimulation, dispatch]);
 
   const [recentRuns, setRecentRuns] = useState<Array<{ sim_id: string; scenario: string; status: string }>>([]);
+
+  // Connect to existing SSE stream if simId is provided (resume/check route)
+  useEffect(() => {
+    if (simId && state.status === "INPUT") {
+      startSimulation(simId);
+    }
+  }, [simId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetch("/simulations")
