@@ -79,6 +79,7 @@ async def _run_pipeline(sim_id: str, req: SimulateRequest, llm: LLMClient):
 
     # Persist report
     task_manager.set_report(sim_id, evaluated)
+    task_manager.add_recent(sim_id, req.scenario_text, "completed")
 
     task_manager.emit_event(
         sim_id, "simulation_complete",

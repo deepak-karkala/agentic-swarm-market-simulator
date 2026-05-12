@@ -26,6 +26,7 @@ class TaskManager:
         self._lock = threading.Lock()
         self._events: dict[str, asyncio.Queue[dict[str, Any]]] = {}
         self._reports: dict[str, dict[str, str]] = {}
+        self._recent: list[dict[str, Any]] = []
         self._loop: asyncio.AbstractEventLoop | None = None
 
     # -- concurrency guard --
@@ -58,6 +59,7 @@ class TaskManager:
             self._current_sim_id = None
             self._events.clear()
             self._reports.clear()
+            self._recent.clear()
 
     # -- event emission --
 
@@ -99,6 +101,18 @@ class TaskManager:
 
     def get_report(self, sim_id: str) -> dict[str, str] | None:
         return self._reports.get(sim_id)
+
+    def add_recent(self, sim_id: str, scenario: str, status: str):
+        self._recent.insert(0, {
+            "sim_id": sim_id,
+            "scenario": scenario[:80],
+            "status": status,
+        })
+        if len(self._recent) > 5:
+            self._recent.pop()
+
+    def get_recent(self) -> list[dict[str, Any]]:
+        return list(self._recent)
 
     def clear_sim(self, sim_id: str) -> None:
         """Remove events and report for a completed simulation."""

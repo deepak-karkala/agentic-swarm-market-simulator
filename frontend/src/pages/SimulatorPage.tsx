@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSimulation, type SimStatus } from "../hooks/useSimulation";
 import { Pane } from "../components/Pane/Pane";
 import { Button } from "../components/Button/Button";
@@ -48,6 +48,15 @@ export function SimulatorPage({ initialScenario = "" }: { initialScenario?: stri
       startSimulation("mock-001");
     }
   }, [scenarioText, geography, vertical, startSimulation, dispatch]);
+
+  const [recentRuns, setRecentRuns] = useState<Array<{ sim_id: string; scenario: string; status: string }>>([]);
+
+  useEffect(() => {
+    fetch("/simulations")
+      .then((r) => r.json())
+      .then((data) => setRecentRuns(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
 
   const stageList: { stage: string; label: string }[] = [
     { stage: "stage0", label: "0\u00B7Seed \u2014 Reality Seeding" },
@@ -156,6 +165,25 @@ export function SimulatorPage({ initialScenario = "" }: { initialScenario?: stri
               <StageRow key={s.stage} status={getStageStatus(s.stage)} label={s.label} />
             ))}
           </div>
+
+          {recentRuns.length > 0 && state.status === "INPUT" && (
+            <div>
+              <span className={styles.recentLabel}>RECENT RUNS</span>
+              {recentRuns.map((run) => (
+                <button
+                  key={run.sim_id}
+                  type="button"
+                  className={styles.recentRow}
+                  onClick={() => {
+                    setScenarioText(run.scenario);
+                    startSimulation(run.sim_id);
+                  }}
+                >
+                  SIM #{run.sim_id} &middot; {run.scenario.slice(0, 40)}
+                </button>
+              ))}
+            </div>
+          )}
         </aside>
       )}
 

@@ -226,3 +226,24 @@
   font-size: 10px;
   color: var(--neg);
 }
+
+/* ── Recent Runs ── */
+.recentLabel {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 6px;
+  display: block;
+}
+.recentRow {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink2);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 8px; padding: 4px 0; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.recentRow:hover { color: var(--accent); }

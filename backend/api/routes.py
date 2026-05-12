@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/simulations")
+async def list_recent():
+    return task_manager.get_recent()
+
+
 @router.post("/simulate", response_model=SimulateResponse)
 async def simulate(request: SimulateRequest, background_tasks: BackgroundTasks):
     if not task_manager.acquire():
